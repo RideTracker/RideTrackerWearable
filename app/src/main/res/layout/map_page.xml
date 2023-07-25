@@ -15,20 +15,20 @@
         android:id="@+id/mapContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent">
+    </androidx.wear.widget.SwipeDismissFrameLayout>
 
-        <androidx.wear.widget.BoxInsetLayout
+    <androidx.wear.widget.BoxInsetLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipChildren="false">
+
+        <androidx.constraintlayout.widget.ConstraintLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:clipChildren="false">
+            android:visibility="visible"
+            app:layout_boxedEdges="all">
 
-            <androidx.constraintlayout.widget.ConstraintLayout
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:visibility="visible"
-                app:layout_boxedEdges="all">
+        </androidx.constraintlayout.widget.ConstraintLayout>
 
-            </androidx.constraintlayout.widget.ConstraintLayout>
-
-        </androidx.wear.widget.BoxInsetLayout>
-    </androidx.wear.widget.SwipeDismissFrameLayout>
+    </androidx.wear.widget.BoxInsetLayout>
 </FrameLayout>

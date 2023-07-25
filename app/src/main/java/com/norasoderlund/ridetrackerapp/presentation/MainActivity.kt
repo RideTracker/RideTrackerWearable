@@ -10,6 +10,9 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Bundle
+import android.view.View
+import android.view.View.OnClickListener
+import android.widget.ImageButton
 import android.widget.ImageView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -32,6 +35,7 @@ import com.norasoderlund.ridetrackerapp.presentation.theme.RideTrackerTheme
 
 class MainActivity : FragmentActivity() {
     var previousLocation: Int = 0;
+    var isRecording: Boolean = false;
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState);
@@ -60,7 +64,7 @@ class MainActivity : FragmentActivity() {
 
         println("results: " + grantResults[0].toString() + "_" + grantResults[1].toString());
 
-        if(grantResults.any { it == PackageManager.PERMISSION_DENIED }) {
+        if(grantResults[1] == PackageManager.PERMISSION_DENIED && grantResults[0] == PackageManager.PERMISSION_DENIED) {
             setContentView(R.layout.permissions);
         }
         else {
@@ -69,6 +73,7 @@ class MainActivity : FragmentActivity() {
     }
 
     fun setPagesView() {
+        //DataBindingUtil.setContentView<MainActivityBinding>(this, R.layout.map);
         setContentView(R.layout.map);
 
         val viewPager2 = findViewById<ViewPager2>(R.id.pager);
@@ -82,6 +87,8 @@ class MainActivity : FragmentActivity() {
                 previousLocation = position;
             }
         });
+
+        findViewById<ImageButton>(R.id.recordingButton)?.setOnClickListener { setRecordingButton(!isRecording); }
     };
 
     fun setPageIndicator(position: Int, enabled: Boolean) {
@@ -99,6 +106,21 @@ class MainActivity : FragmentActivity() {
             view.background.setTint(Color.parseColor("#FFFFFF"));
         else
             view.background.setTint(Color.parseColor("#808080"));
+    }
+
+    fun setRecordingButton(recording: Boolean) {
+        this.isRecording = recording;
+
+        var view: ImageButton? = findViewById<ImageButton>(R.id.recordingButton) ?: return;
+
+        if(recording) {
+            view!!.setImageResource(R.drawable.baseline_stop_24);
+            view.background.setTint(Color.parseColor("#171A23"));
+        }
+        else {
+            view!!.setImageResource(R.drawable.baseline_play_arrow_24);
+            view.background.setTint(Color.parseColor("#CDBFF7"));
+        }
     }
 }
 
