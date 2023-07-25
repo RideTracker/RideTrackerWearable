@@ -11,24 +11,85 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"/>
 
-    <androidx.wear.widget.SwipeDismissFrameLayout
-        android:id="@+id/mapContainer"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent">
-    </androidx.wear.widget.SwipeDismissFrameLayout>
-
-    <androidx.wear.widget.BoxInsetLayout
+    <View
+        android:id="@+id/pausedViewIndicator"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:clipChildren="false">
+        android:alpha="0.5"
+        android:background="@color/black"/>
 
-        <androidx.constraintlayout.widget.ConstraintLayout
+    <androidx.wear.widget.SwipeDismissFrameLayout
+        android:id="@+id/swipeDismissal"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+        <androidx.wear.widget.BoxInsetLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:visibility="visible"
-            app:layout_boxedEdges="all">
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent">
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                app:layout_boxedEdges="all">
+                <ImageButton
+                    android:id="@+id/trafficButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:adjustViewBounds="false"
+                    android:background="@drawable/circle_button"
+                    android:backgroundTint="@color/button"
+                    android:contentDescription="@string/start_recording"
+                    android:gravity="center_vertical|center_horizontal"
+                    android:padding="4dp"
+                    android:layout_margin="8dp"
+                    android:src="@drawable/baseline_traffic_24"
+                    android:tint="@color/green"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    tools:ignore="UseAppTint"/>
 
-        </androidx.constraintlayout.widget.ConstraintLayout>
+                <ImageButton
+                    android:id="@+id/ambientButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_margin="8dp"
+                    android:adjustViewBounds="false"
+                    android:background="@drawable/circle_button"
+                    android:backgroundTint="@color/button"
+                    android:contentDescription="@string/start_recording"
+                    android:gravity="center_vertical|center_horizontal"
+                    android:padding="4dp"
+                    android:src="@drawable/baseline_wb_sunny_24"
+                    android:tint="@color/yellow"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    tools:ignore="UseAppTint" />
+            </androidx.constraintlayout.widget.ConstraintLayout>
 
-    </androidx.wear.widget.BoxInsetLayout>
+
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_marginBottom="15dp">
+                <ImageButton
+                    android:id="@+id/mapRecordingButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:adjustViewBounds="false"
+                    android:background="@drawable/circle_button"
+                    android:backgroundTint="@color/brand"
+                    android:contentDescription="@string/start_recording"
+                    android:gravity="center_vertical|center_horizontal"
+                    android:padding="10dp"
+                    android:src="@drawable/baseline_play_arrow_24"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    android:tint="@color/color"
+                    tools:ignore="UseAppTint" />
+            </androidx.constraintlayout.widget.ConstraintLayout>
+        </androidx.wear.widget.BoxInsetLayout>
+    </androidx.wear.widget.SwipeDismissFrameLayout>
 </FrameLayout>

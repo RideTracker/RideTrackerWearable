@@ -9,39 +9,49 @@
             android:id="@+id/pager"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="#171A23"/>
+            android:background="@color/black"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
 
         <androidx.constraintlayout.widget.ConstraintLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent">
+            <TextView
+                android:id="@+id/clockTextView"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:shadowColor="@color/background"
+                android:shadowRadius="5"
+                android:text="00:00"
+                android:textColor="@color/color"
+                android:textFontWeight="600"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                />
+
+            <TextView
+                android:id="@+id/pausedTextIndicator"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:shadowColor="@color/background"
+                android:shadowRadius="5"
+                android:text="@string/not_recording"
+                android:textAlignment="center"
+                android:textColor="@color/color"
+                android:textFontWeight="600"
+                android:textSize="18sp"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/clockTextView" />
 
             <LinearLayout
+                android:id="@+id/linearLayout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:paddingVertical="6dp"
                 app:layout_constraintBottom_toBottomOf="parent">
-
-                <androidx.constraintlayout.widget.ConstraintLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent">
-
-                    <ImageButton
-                        android:id="@+id/recordingButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_margin="10dp"
-                        android:adjustViewBounds="false"
-                        android:background="@drawable/circle_button"
-                        android:backgroundTint="#CDBFF7"
-                        android:gravity="center_vertical|center_horizontal"
-                        android:padding="10dp"
-                        android:src="@drawable/baseline_play_arrow_24"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toStartOf="parent"
-                        tools:layout_editor_absoluteY="10dp" />
-                </androidx.constraintlayout.widget.ConstraintLayout>
-
                 <androidx.constraintlayout.widget.ConstraintLayout
                     android:layout_width="match_parent"
                     android:layout_height="match_parent">
@@ -50,34 +60,28 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:orientation="horizontal"
+                        app:layout_constraintBottom_toBottomOf="parent"
                         app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toStartOf="parent"
-                        tools:layout_editor_absoluteY="3dp">
+                        app:layout_constraintStart_toStartOf="parent">
 
                         <ImageView
                             android:id="@+id/mapPageIndicator"
                             android:layout_width="7dp"
                             android:layout_height="7dp"
                             android:layout_margin="4dp"
-                            android:backgroundTint="#FFFFFF"
-                            android:background="@drawable/circle_button" />
+                            android:background="@drawable/circle_button"
+                            android:backgroundTint="#FFFFFF" />
 
                         <ImageView
                             android:id="@+id/statsPageIndicator"
                             android:layout_width="7dp"
                             android:layout_height="7dp"
                             android:layout_margin="4dp"
-                            android:backgroundTint="#808080"
-                            android:background="@drawable/circle_button" />
-
+                            android:background="@drawable/circle_button"
+                            android:backgroundTint="#808080" />
                     </LinearLayout>
-
                 </androidx.constraintlayout.widget.ConstraintLayout>
-
             </LinearLayout>
-
-
         </androidx.constraintlayout.widget.ConstraintLayout>
     </FrameLayout>
-
 </layout>

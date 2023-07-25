@@ -1,24 +1,26 @@
 package com.norasoderlund.ridetrackerapp.presentation
 
-import android.Manifest
 import android.annotation.SuppressLint
-import android.content.pm.PackageManager
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.location.Location
+import android.hardware.GeomagneticField
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.Bundle
-import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.core.app.ActivityCompat
+import android.widget.ImageButton
+import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.wear.ambient.AmbientModeSupport
 import androidx.wear.widget.SwipeDismissFrameLayout
 import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.SupportMapFragment
@@ -28,11 +30,55 @@ import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.norasoderlund.ridetrackerapp.R
+import org.greenrobot.eventbus.EventBus
+import org.greenrobot.eventbus.Subscribe
+import org.greenrobot.eventbus.ThreadMode
+
 
 class MapPageFragment : Fragment() {
     var mapFragment: SupportMapFragment? = null;
     var googleMap: GoogleMap? = null;
     var googleMapLocationMarker: Marker? = null;
+
+    var trafficEnabled: Boolean = false;
+    var ambientEnabled: Boolean = false;
+
+    override fun onStart() {
+        super.onStart();
+
+        EventBus.getDefault().register(this);
+    }
+
+    override fun onResume() {
+        super.onResume();
+    }
+
+    override fun onPause() {
+        super.onPause();
+    }
+
+    override fun onStop() {
+        super.onStop();
+
+        EventBus.getDefault().unregister(this);
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public fun onMainActivityLocationEventReceived(result: LocationResult) {
+        println("Location result received.");
+
+        if(googleMap != null) {
+            if (result.lastLocation != null) {
+                val coordinate =
+                    LatLng(result.lastLocation!!.latitude, result.lastLocation!!.longitude);
+
+                if (googleMapLocationMarker != null)
+                    googleMapLocationMarker!!.position = coordinate;
+
+                googleMap!!.animateCamera(CameraUpdateFactory.newLatLng(coordinate));
+            }
+        }
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -48,9 +94,9 @@ class MapPageFragment : Fragment() {
         val context = requireContext();
         val activity = requireActivity();
 
-        val mapFrameLayout = view.findViewById<SwipeDismissFrameLayout>(R.id.mapContainer);
+        val swipeDismissal = view.findViewById<SwipeDismissFrameLayout>(R.id.swipeDismissal);
 
-        mapFrameLayout.addCallback(object : SwipeDismissFrameLayout.Callback() {
+        swipeDismissal.addCallback(object : SwipeDismissFrameLayout.Callback() {
             override fun onSwipeStarted(layout: SwipeDismissFrameLayout?) {
                 super.onSwipeStarted(layout);
 
@@ -70,6 +116,12 @@ class MapPageFragment : Fragment() {
 
         println("Is ambient enabled: " + controller.isAmbient);
 
+        setTrafficButton(false);
+        view.findViewById<ImageButton>(R.id.trafficButton)?.setOnClickListener { setTrafficButton(!trafficEnabled); }
+
+        setAmbientButton(false);
+        view.findViewById<ImageButton>(R.id.ambientButton)?.setOnClickListener { setAmbientButton(!ambientEnabled); }
+
         // Obtain the MapFragment and set the async listener to be notified when the map is ready.
         mapFragment = childFragmentManager.findFragmentById(R.id.map) as SupportMapFragment?;
 
@@ -81,7 +133,7 @@ class MapPageFragment : Fragment() {
     @SuppressLint("MissingPermission")
     fun onMapReady(googleMap: GoogleMap) {
         val context = requireContext();
-        val activity = requireActivity();
+        val activity = requireActivity() as MainActivity;
 
         this.googleMap = googleMap;
 
@@ -99,7 +151,7 @@ class MapPageFragment : Fragment() {
         googleMap.uiSettings.isScrollGesturesEnabled = false;
         googleMap.uiSettings.isScrollGesturesEnabledDuringRotateOrZoom = false;
 
-        googleMap.isTrafficEnabled = true;
+        googleMap.isTrafficEnabled = trafficEnabled;
 
         this.googleMapLocationMarker = googleMap.addMarker(
             MarkerOptions()
@@ -108,9 +160,14 @@ class MapPageFragment : Fragment() {
                 .icon(BitmapDescriptorFactory.fromBitmap(getScaledMarkerIcon(R.drawable.location, 32, 32)))
         );
 
-        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(activity);
+        if(activity.lastLocation != null) {
+            val coordinate = LatLng(activity.lastLocation!!.latitude, activity.lastLocation!!.longitude);
 
-        val lastLocation = fusedLocationClient.lastLocation;
+            this.googleMapLocationMarker!!.position = coordinate;
+            googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(coordinate, 15f));
+        }
+
+        /*val lastLocation = fusedLocationClient.lastLocation;
 
         lastLocation.addOnSuccessListener { location : Location? ->
             if(location != null) {
@@ -119,11 +176,8 @@ class MapPageFragment : Fragment() {
                 this.googleMapLocationMarker!!.position = coordinate;
                 googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(coordinate, 14f));
             }
-        };
+        };*/
 
-        fusedLocationClient.requestLocationUpdates(LocationRequest.Builder(10 * 1000).build(),
-            locationCallback,
-            Looper.getMainLooper());
 
 
         /*val sydney = LatLng(-33.85704, 151.21522);
@@ -141,6 +195,43 @@ class MapPageFragment : Fragment() {
         val bitmap = BitmapFactory.decodeResource(this.resources, resource);
 
         return Bitmap.createScaledBitmap(bitmap, width, height, false);
+    }
+
+    fun setTrafficButton(enabled: Boolean) {
+        this.trafficEnabled = enabled;
+
+        var trafficButton: ImageButton? = view?.findViewById<ImageButton>(R.id.trafficButton) ?: return;
+
+        var context = requireContext();
+
+        if(enabled) {
+            //trafficButton!!.background.setTint(ContextCompat.getColor(context, R.color.button));
+            trafficButton!!.setColorFilter(ContextCompat.getColor(context, R.color.green));
+        }
+        else {
+            //trafficButton!!.background.setTint(ContextCompat.getColor(context, R.color.green));
+            trafficButton!!.setColorFilter(ContextCompat.getColor(context, R.color.color));
+        }
+
+        if(googleMap != null)
+            googleMap!!.isTrafficEnabled = enabled;
+    }
+
+    fun setAmbientButton(enabled: Boolean) {
+        this.ambientEnabled = enabled;
+
+        var ambientButton: ImageButton? = view?.findViewById<ImageButton>(R.id.ambientButton) ?: return;
+
+        var context = requireContext();
+
+        if(enabled) {
+            //ambientButton!!.background.setTint(ContextCompat.getColor(context, R.color.button));
+            ambientButton!!.setColorFilter(ContextCompat.getColor(context, R.color.yellow));
+        }
+        else {
+            //ambientButton!!.background.setTint(ContextCompat.getColor(context, R.color.yellow));
+            ambientButton!!.setColorFilter(ContextCompat.getColor(context, R.color.color));
+        }
     }
 
     private val locationCallback = object : LocationCallback() {

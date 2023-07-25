@@ -7,13 +7,21 @@
 package com.norasoderlund.ridetrackerapp.presentation
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.PorterDuff
+import android.location.Location
+import android.location.LocationManager
+import android.opengl.Visibility
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
-import android.view.View.OnClickListener
 import android.widget.ImageButton
 import android.widget.ImageView
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,19 +33,40 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.app.ActivityCompat
-import androidx.fragment.app.FragmentActivity
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.DrawableCompat
 import androidx.viewpager2.widget.ViewPager2
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
+import androidx.wear.widget.CurvedTextView
+import com.google.android.gms.location.CurrentLocationRequest
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.norasoderlund.ridetrackerapp.R
 import com.norasoderlund.ridetrackerapp.presentation.theme.RideTrackerTheme
+import org.greenrobot.eventbus.EventBus
+import java.util.Calendar
+import kotlin.math.floor
 
-class MainActivity : FragmentActivity() {
+
+class MainActivity : AppCompatActivity() {
     var previousLocation: Int = 0;
     var isRecording: Boolean = false;
+    var isLoading: Boolean = true;
+    var isPaused: Boolean = false;
+    var duration: Int = 0;
+
+    internal var lastLocation: Location? = null;
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        setTheme(R.style.AppTheme_NoActionBar);
+
         super.onCreate(savedInstanceState);
 
         println("created");
@@ -51,7 +80,8 @@ class MainActivity : FragmentActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 0);
         }
         else {
-            setPagesView();
+            //setPagesView();
+            setLocationView();
         }
     }
 
@@ -72,6 +102,114 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    var progressIndicatorRunnable = object : Runnable {
+        override fun run() {
+            val progressIndicator = findViewById<CircularProgressIndicator>(R.id.progressIndicator);
+
+            if(progressIndicator != null) {
+                if(isLoading) {
+                    if (progressIndicator.progress < 50) {
+                        progressIndicator.progress = (progressIndicator.progress + 1) % 100;
+                    } else {
+                        progressIndicator.progress = (progressIndicator.progress - 1) % 100;
+                    }
+
+                    progressIndicator.rotation = (progressIndicator.rotation + 3.6f) % 360;
+
+                    Handler(Looper.getMainLooper()).postDelayed(this, 10);
+                }
+                else {
+                    if (progressIndicator.progress != 100) {
+                        progressIndicator.progress = progressIndicator.progress + 1;
+                        progressIndicator.rotation = (progressIndicator.rotation + 3.6f) % 360;
+
+                        Handler(Looper.getMainLooper()).postDelayed(this, 10);
+                    }
+                    else
+                        Handler(Looper.getMainLooper()).postDelayed(onLoadingComplete, 100);
+                }
+            }
+            else if(!isLoading)
+                Handler(Looper.getMainLooper()).postDelayed(onLoadingComplete, 10);
+        }
+    }
+
+    var onLoadingComplete = object : Runnable {
+        override fun run() {
+            setPagesView();
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun setLocationView() {
+        setContentView(R.layout.location);
+
+        Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
+
+        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+
+        fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).addOnSuccessListener {
+            location: Location ->
+                if(isLoading) {
+                    lastLocation = location;
+
+                    isLoading = false;
+                }
+        };
+
+        fusedLocationClient.requestLocationUpdates(LocationRequest.Builder(10 * 1000).setWaitForAccurateLocation(true).build(), locationCallback, Looper.getMainLooper());
+    }
+
+    private val locationCallback = object : LocationCallback() {
+        override fun onLocationResult(result: LocationResult) {
+            if(result.lastLocation != null)
+                lastLocation = result.lastLocation;
+
+            EventBus.getDefault().post(MainActivityLocationEvent(result));
+
+            for (location in result.locations) {
+                println(String.format("Location update received at latitude %f longitude %f", location.latitude, location.longitude));
+
+                //moveToLocation(location)
+            }
+
+            if(isLoading)
+                isLoading = false;
+        }
+    }
+
+    var clockRunnable = object : Runnable {
+        override fun run() {
+            val clockTextView = findViewById<TextView>(R.id.clockTextView);
+
+            val calendar = Calendar.getInstance();
+            val currentSecond = calendar.get(Calendar.SECOND);
+            val timeUntilNextMinute = ((60 - currentSecond) * 1000).toLong().coerceAtLeast(1);
+
+            if(clockTextView != null) {
+                val currentHour = calendar.get(Calendar.HOUR_OF_DAY);
+                val currentMinute = calendar.get(Calendar.MINUTE);
+
+                clockTextView.text = String.format("%02d:%02d", currentHour, currentMinute);
+            }
+
+            Handler(Looper.getMainLooper()).postDelayed(this, timeUntilNextMinute);
+        }
+    }
+
+    var durationRunnable = object : Runnable {
+        override fun run() {
+            if(isRecording && !isPaused) {
+                duration++;
+
+                val pausedTextIndicator = findViewById<TextView>(R.id.pausedTextIndicator);
+                pausedTextIndicator?.text = getFormattedDuration();
+
+                Handler(Looper.getMainLooper()).postDelayed(this, 1000);
+            }
+        }
+    }
+
     fun setPagesView() {
         //DataBindingUtil.setContentView<MainActivityBinding>(this, R.layout.map);
         setContentView(R.layout.map);
@@ -88,8 +226,51 @@ class MainActivity : FragmentActivity() {
             }
         });
 
-        findViewById<ImageButton>(R.id.recordingButton)?.setOnClickListener { setRecordingButton(!isRecording); }
+        setRecordingButton(false);
+
+        clockRunnable.run();
+
+        /*findViewById<ImageButton>(R.id.recordingButton)?.setOnClickListener {
+            val pausedTextIndicator = findViewById<TextView>(R.id.pausedTextIndicator);
+            val pausedViewIndicator = findViewById<View>(R.id.pausedViewIndicator);
+
+            if(isRecording) {
+                isPaused = !isPaused;
+
+                pausedTextIndicator?.text = if(isPaused) resources.getString(R.string.paused) else getFormattedDuration();
+
+                pausedTextIndicator?.setTextColor(ContextCompat.getColor(this, if (isPaused) R.color.red else R.color.blue));
+
+                if(!isPaused)
+                    Handler(Looper.getMainLooper()).postDelayed(durationRunnable, 1000);
+            }
+            else {
+                isRecording = true;
+
+                //pausedTextIndicator?.text = resources.getString(R.string.recording);
+                pausedTextIndicator?.text = getFormattedDuration();
+                pausedTextIndicator?.setTextColor(ContextCompat.getColor(this, R.color.blue));
+
+                Handler(Looper.getMainLooper()).postDelayed(durationRunnable, 1000);
+            }
+
+            pausedViewIndicator?.visibility = if (isPaused || !isRecording) View.VISIBLE else View.INVISIBLE;
+
+            setRecordingButton(!isPaused);
+        }*/
     };
+
+    fun getFormattedDuration(): String {
+        var secondsRemaining = duration.coerceAtLeast(1).toDouble();
+
+        var hours = floor(secondsRemaining / (60 * 60));
+        secondsRemaining -= hours * 60 * 60;
+
+        var minutes = floor(secondsRemaining / 60);
+        secondsRemaining -= minutes * 60;
+
+        return String.format("%d:%02d:%02d", hours.toInt(), minutes.toInt(), secondsRemaining.toInt());
+    }
 
     fun setPageIndicator(position: Int, enabled: Boolean) {
         var view: ImageView? = null;
@@ -102,25 +283,33 @@ class MainActivity : FragmentActivity() {
         if(view == null)
             return;
 
-        if(enabled)
-            view.background.setTint(Color.parseColor("#FFFFFF"));
-        else
+        if(enabled) {
+            view.background.setTint(ContextCompat.getColor(this, R.color.color));
+        }
+        else {
             view.background.setTint(Color.parseColor("#808080"));
+        }
     }
 
     fun setRecordingButton(recording: Boolean) {
-        this.isRecording = recording;
-
-        var view: ImageButton? = findViewById<ImageButton>(R.id.recordingButton) ?: return;
+        /*var recordingButton: ImageButton? = findViewById<ImageButton>(R.id.recordingButton) ?: return;
 
         if(recording) {
-            view!!.setImageResource(R.drawable.baseline_stop_24);
-            view.background.setTint(Color.parseColor("#171A23"));
+            recordingButton!!.setImageResource(R.drawable.baseline_stop_24);
+            recordingButton.background.setTint(ContextCompat.getColor(this, R.color.button));
+            recordingButton.setColorFilter(ContextCompat.getColor(this, R.color.color));
+
+            //findViewById<ImageButton>(R.id.trafficButton)?.visibility = View.INVISIBLE;
+            //findViewById<ImageButton>(R.id.ambientButton)?.visibility = View.INVISIBLE;
         }
         else {
-            view!!.setImageResource(R.drawable.baseline_play_arrow_24);
-            view.background.setTint(Color.parseColor("#CDBFF7"));
-        }
+            recordingButton!!.setImageResource(R.drawable.baseline_play_arrow_24);
+            recordingButton.background.setTint(ContextCompat.getColor(this, R.color.brand));
+            recordingButton.setColorFilter(ContextCompat.getColor(this, R.color.color));
+
+            //findViewById<ImageButton>(R.id.trafficButton)?.visibility = View.VISIBLE;
+            //findViewById<ImageButton>(R.id.ambientButton)?.visibility = View.VISIBLE;
+        }*/
     }
 }
 

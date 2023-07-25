@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background">#171A23</color>
+    <color name="color">#FFFFFF</color>
+    <color name="brand">#BB87FC</color>
+    <color name="black">#000000</color>
+    <color name="green">#C4EED0</color>
+    <color name="yellow">#FDE293</color>
+    <color name="button">#202124</color>
+    <color name="red">#840000</color>
+    <color name="blue">#AECBFA</color>
+
+    <style name="AppTheme_NoActionBar" parent="Theme.AppCompat.NoActionBar">
+    </style>
+</resources>
