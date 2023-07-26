@@ -63,6 +63,13 @@
                         app:layout_constraintBottom_toBottomOf="parent"
                         app:layout_constraintEnd_toEndOf="parent"
                         app:layout_constraintStart_toStartOf="parent">
+                        <ImageView
+                            android:id="@+id/menuPageIndicator"
+                            android:layout_width="7dp"
+                            android:layout_height="7dp"
+                            android:layout_margin="4dp"
+                            android:background="@drawable/circle_button"
+                            android:backgroundTint="#808080" />
 
                         <ImageView
                             android:id="@+id/mapPageIndicator"

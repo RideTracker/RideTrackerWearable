@@ -45,7 +45,7 @@ class Recorder {
 
     internal var sessions: MutableList<RecorderSession> = mutableListOf();
 
-    private var lastLocation: Location? = null;
+    internal var lastLocation: Location? = null;
 
     internal fun toggle() {
         if(!started || paused)

@@ -187,7 +187,10 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.map);
 
         val viewPager2 = findViewById<ViewPager2>(R.id.pager);
+
         viewPager2.adapter = PageAdapter(this);
+
+        viewPager2.setCurrentItem(1, false);
 
         viewPager2.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
@@ -262,8 +265,10 @@ class MainActivity : AppCompatActivity() {
         var view: ImageView? = null;
 
         if(position == 0)
-            view = findViewById<ImageView>(R.id.mapPageIndicator);
+            view = findViewById<ImageView>(R.id.menuPageIndicator);
         else if(position == 1)
+            view = findViewById<ImageView>(R.id.mapPageIndicator);
+        else if(position == 2)
             view = findViewById<ImageView>(R.id.statsPageIndicator);
 
         if(view == null)

@@ -29,6 +29,7 @@ import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
@@ -40,9 +41,12 @@ import com.norasoderlund.ridetrackerapp.RecorderStateEvent
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import kotlin.math.max
+import kotlin.math.min
 
 
 class MapPageFragment : Fragment() {
+    lateinit var activity: MainActivity;
     var mapFragment: SupportMapFragment? = null;
     var googleMap: GoogleMap? = null;
     var googleMapLocationMarker: Marker? = null;
@@ -83,7 +87,7 @@ class MapPageFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState);
 
         val context = requireContext();
-        val activity = requireActivity() as MainActivity;
+        activity = requireActivity() as MainActivity;
 
         val swipeDismissal = view.findViewById<SwipeDismissFrameLayout>(R.id.swipeDismissal);
 
@@ -142,6 +146,7 @@ class MapPageFragment : Fragment() {
             println("Failed to load map style because of an error.");
         }
 
+        googleMap.setMaxZoomPreference(16f);
         googleMap.uiSettings.isMapToolbarEnabled = false;
         googleMap.uiSettings.isScrollGesturesEnabled = false;
         googleMap.uiSettings.isScrollGesturesEnabledDuringRotateOrZoom = false;
@@ -242,6 +247,9 @@ class MapPageFragment : Fragment() {
             recordingButton.setColorFilter(ContextCompat.getColor(context, R.color.color));
 
             pausedViewIndicator!!.visibility = View.INVISIBLE;
+
+            if(activity.recorder.lastLocation != null)
+                googleMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(activity.recorder.lastLocation!!.latitude, activity.recorder.lastLocation!!.longitude), 15f));
         }
         else {
             recordingButton.setImageResource(R.drawable.baseline_play_arrow_24);
@@ -251,7 +259,39 @@ class MapPageFragment : Fragment() {
             pausedViewIndicator!!.visibility = View.VISIBLE;
 
             currentPolyline = null;
+
+            setMapCameraToBounds();
         }
+    }
+
+    private fun setMapCameraToBounds() {
+        var minLat: Double? = null;
+        var maxLat: Double? = null;
+
+        var minLng: Double? = null;
+        var maxLng: Double? = null;
+
+        activity.recorder.sessions.flatMap { session -> session.locations }!!.forEach {location ->
+            if (minLat == null) {
+                minLat = location.coords.latitude
+                maxLat = location.coords.latitude
+
+                minLng = location.coords.longitude
+                maxLng = location.coords.longitude
+            } else {
+                minLat = min(location.coords.latitude, minLat!!)
+                maxLat = max(location.coords.latitude, maxLat!!)
+
+                minLng = min(location.coords.longitude, minLng!!)
+                maxLng = max(location.coords.longitude, maxLng!!)
+            }
+        }
+
+        val builder = LatLngBounds.builder();
+        builder.include(LatLng(minLat!!, minLng!!));
+        builder.include(LatLng(maxLat!!, maxLng!!));
+
+        googleMap?.moveCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), 100));
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
