@@ -32,7 +32,10 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
+import com.google.android.gms.maps.model.Polyline
+import com.google.android.gms.maps.model.PolylineOptions
 import com.norasoderlund.ridetrackerapp.R
+import com.norasoderlund.ridetrackerapp.RecorderLocationEvent
 import com.norasoderlund.ridetrackerapp.RecorderStateEvent
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -43,6 +46,7 @@ class MapPageFragment : Fragment() {
     var mapFragment: SupportMapFragment? = null;
     var googleMap: GoogleMap? = null;
     var googleMapLocationMarker: Marker? = null;
+    var currentPolyline: Polyline? = null;
 
     var trafficEnabled: Boolean = false;
     var ambientEnabled: Boolean = false;
@@ -65,23 +69,6 @@ class MapPageFragment : Fragment() {
         super.onStop();
 
         EventBus.getDefault().unregister(this);
-    }
-
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public fun onMainActivityLocationEventReceived(result: LocationResult) {
-        println("Location result received.");
-
-        if(googleMap != null) {
-            if (result.lastLocation != null) {
-                val coordinate =
-                    LatLng(result.lastLocation!!.latitude, result.lastLocation!!.longitude);
-
-                if (googleMapLocationMarker != null)
-                    googleMapLocationMarker!!.position = coordinate;
-
-                googleMap!!.animateCamera(CameraUpdateFactory.newLatLng(coordinate));
-            }
-        }
     }
 
     override fun onCreateView(
@@ -242,32 +229,10 @@ class MapPageFragment : Fragment() {
         }
     }
 
-    private val locationCallback = object : LocationCallback() {
-        override fun onLocationResult(result: LocationResult) {
-            println("Location result received.");
-
-            if(googleMap != null) {
-                if(result.lastLocation != null) {
-                    val coordinate = LatLng(result.lastLocation!!.latitude, result.lastLocation!!.longitude);
-
-                    if(googleMapLocationMarker != null)
-                        googleMapLocationMarker!!.position = coordinate;
-
-                    googleMap!!.animateCamera(CameraUpdateFactory.newLatLng(coordinate));
-                }
-
-                for (location in result.locations) {
-                    println(String.format("Location update received at latitude %f longitude %f", location.latitude, location.longitude));
-
-                    //moveToLocation(location)
-                }
-            }
-        }
-    }
-
     @Subscribe(threadMode = ThreadMode.MAIN)
     public fun onRecorderStateEvent(event: RecorderStateEvent) {
         val recordingButton = view?.findViewById<ImageButton>(R.id.recordingButton)?: return;
+        val pausedViewIndicator = view?.findViewById<View>(R.id.pausedViewIndicator);
 
         val context = requireContext();
 
@@ -275,11 +240,39 @@ class MapPageFragment : Fragment() {
             recordingButton.setImageResource(R.drawable.baseline_stop_24);
             recordingButton.background.setTint(ContextCompat.getColor(context, R.color.button));
             recordingButton.setColorFilter(ContextCompat.getColor(context, R.color.color));
+
+            pausedViewIndicator!!.visibility = View.INVISIBLE;
         }
         else {
             recordingButton.setImageResource(R.drawable.baseline_play_arrow_24);
             recordingButton.background.setTint(ContextCompat.getColor(context, R.color.brand));
             recordingButton.setColorFilter(ContextCompat.getColor(context, R.color.color));
+
+            pausedViewIndicator!!.visibility = View.VISIBLE;
+
+            currentPolyline = null;
+        }
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public fun onRecorderLocationEvent(event: RecorderLocationEvent) {
+        if(googleMap != null) {
+            if (event.result.lastLocation != null) {
+                val coordinate =
+                    LatLng(event.result.lastLocation!!.latitude, event.result.lastLocation!!.longitude);
+
+                if(currentPolyline == null)
+                    currentPolyline = googleMap?.addPolyline(PolylineOptions().color(ContextCompat.getColor(requireContext(), R.color.brand)));
+
+                var points = currentPolyline!!.points;
+                points.add(coordinate);
+                currentPolyline!!.points = points;
+
+                googleMap!!.animateCamera(CameraUpdateFactory.newLatLng(coordinate));
+
+                if (googleMapLocationMarker != null)
+                    googleMapLocationMarker!!.position = coordinate;
+            }
         }
     }
 }

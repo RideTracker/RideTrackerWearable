@@ -14,7 +14,12 @@ import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.norasoderlund.ridetrackerapp.presentation.MainActivity
+import com.norasoderlund.ridetrackerapp.presentation.RecorderSession
+import com.norasoderlund.ridetrackerapp.presentation.RecorderSessionLocation
 import org.greenrobot.eventbus.EventBus
+import java.util.Calendar
+import java.util.Date
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.math.floor
 
@@ -34,7 +39,11 @@ class Recorder {
 
     internal var started: Boolean = false;
     internal var paused: Boolean = false;
-    internal var elapsedSeconds: Int = 0;
+    internal var accumulatedElevation: Double = 0.0;
+    internal var accumulatedDistance: Double = 0.0;
+    internal var previousSessionMilliseconds: Long = 0;
+
+    internal var sessions: MutableList<RecorderSession> = mutableListOf();
 
     private var lastLocation: Location? = null;
 
@@ -53,6 +62,8 @@ class Recorder {
         started = true;
         paused = false;
 
+        sessions.add(RecorderSession(UUID.randomUUID().toString(), mutableListOf(), mutableListOf()));
+
         EventBus.getDefault().post(RecorderStateEvent(started, paused));
 
         handler.postDelayed(elapsedSecondsRunnable, 1000);
@@ -69,29 +80,67 @@ class Recorder {
         EventBus.getDefault().post(RecorderStateEvent(started, paused));
 
         fusedLocationProviderClient.removeLocationUpdates(locationCallback);
+
+        previousSessionMilliseconds = 0;
+
+        sessions.iterator().forEach { session ->
+            if(session.locations.count() < 2)
+                return;
+
+            previousSessionMilliseconds += session.locations.last().timestamp - session.locations.first().timestamp;
+        }
+    }
+
+    internal fun getElapsedMilliseconds(): Long {
+        var milliseconds: Long = previousSessionMilliseconds;
+
+        if(!paused && sessions.isNotEmpty() && sessions.last().locations.isNotEmpty()) {
+            val calendar = Calendar.getInstance();
+
+            milliseconds += calendar.timeInMillis - sessions.last().locations.first().timestamp;
+        }
+
+        return milliseconds;
     }
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             println("onLocationResult");
 
-            if(result.lastLocation != null)
-                lastLocation = result.lastLocation;
-
-            EventBus.getDefault().post(RecorderLocationEvent(result));
+            //if(result.lastLocation != null)
+            //    lastLocation = result.lastLocation;
 
             for (location in result.locations) {
                 println(String.format("Location update received at latitude %f longitude %f", location.latitude, location.longitude));
+
+                if(!paused) {
+                    sessions.last().locations.add(RecorderSessionLocation(location, location.time));
+
+                    if (lastLocation != null) {
+                        var elevation = location.altitude - lastLocation!!.altitude;
+                        var distance = location.distanceTo(lastLocation!!);
+
+                        accumulatedDistance += distance;
+
+                        if (location.altitude > lastLocation!!.altitude && (!location.hasVerticalAccuracy() || elevation < location.verticalAccuracyMeters)) {
+                            accumulatedElevation += elevation;
+                        }
+                    }
+
+                    lastLocation = location;
+                }
             }
+
+            EventBus.getDefault().post(RecorderLocationEvent(result, !paused));
         }
     }
 
     private var elapsedSecondsRunnable = object : Runnable {
         override fun run() {
             if(!paused) {
-                elapsedSeconds++;
+                //elapsedSeconds++;
 
-                EventBus.getDefault().post(RecorderElapsedSecondsEvent(elapsedSeconds, getFormattedElapsedTime()));
+                EventBus.getDefault().post(RecorderElapsedSecondsEvent(getElapsedMilliseconds() / 1000, getFormattedElapsedTime()));
 
                 handler.postDelayed(this, 1000);
             }
@@ -99,7 +148,7 @@ class Recorder {
     }
 
     internal fun getFormattedElapsedTime(): String {
-        var secondsRemaining = elapsedSeconds.toDouble();
+        var secondsRemaining = (getElapsedMilliseconds() / 1000).toDouble();
 
         var hours = floor(secondsRemaining / (60 * 60));
         secondsRemaining -= hours * 60 * 60;
