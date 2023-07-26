@@ -2,27 +2,32 @@ package com.norasoderlund.ridetrackerapp
 
 import android.annotation.SuppressLint
 import android.location.Location
+import android.location.LocationManager
 import android.os.Handler
 import android.os.Looper
 import android.widget.TextView
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.Granularity
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import com.norasoderlund.ridetrackerapp.presentation.MainActivity
 import org.greenrobot.eventbus.EventBus
+import java.util.concurrent.TimeUnit
 import kotlin.math.floor
 
 class Recorder {
     private lateinit var activity: MainActivity;
 
+    private lateinit var fusedLocationProviderClient: FusedLocationProviderClient;
+
     @SuppressLint("MissingPermission")
     constructor(activity: MainActivity) {
         this.activity = activity;
 
-        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(activity);
-
-        fusedLocationClient.requestLocationUpdates(LocationRequest.Builder(10 * 1000).setWaitForAccurateLocation(true).build(), locationCallback, Looper.getMainLooper());
+        this.fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(activity);
     }
 
     private var handler: Handler = Handler(Looper.getMainLooper());
@@ -40,6 +45,7 @@ class Recorder {
         stop();
     }
 
+    @SuppressLint("MissingPermission")
     internal fun start() {
         if(started && !paused)
             return;
@@ -50,6 +56,8 @@ class Recorder {
         EventBus.getDefault().post(RecorderStateEvent(started, paused));
 
         handler.postDelayed(elapsedSecondsRunnable, 1000);
+
+        fusedLocationProviderClient.requestLocationUpdates(LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, TimeUnit.SECONDS.toMillis(3)).build(), locationCallback, Looper.getMainLooper());
     }
 
     internal fun stop() {
@@ -59,10 +67,14 @@ class Recorder {
         paused = true;
 
         EventBus.getDefault().post(RecorderStateEvent(started, paused));
+
+        fusedLocationProviderClient.removeLocationUpdates(locationCallback);
     }
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
+            println("onLocationResult");
+
             if(result.lastLocation != null)
                 lastLocation = result.lastLocation;
 

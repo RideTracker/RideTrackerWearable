@@ -63,11 +63,12 @@ class MainActivity : AppCompatActivity() {
 
         val fineLocationPermissions = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION);
         val coarseLocationPermissions = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION);
+        val backgroundLocationPermissions = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION);
 
-        if (fineLocationPermissions != PackageManager.PERMISSION_GRANTED && coarseLocationPermissions != PackageManager.PERMISSION_GRANTED) {
+        if (fineLocationPermissions != PackageManager.PERMISSION_GRANTED || coarseLocationPermissions != PackageManager.PERMISSION_GRANTED || backgroundLocationPermissions != PackageManager.PERMISSION_GRANTED) {
             setContentView(R.layout.permissions);
 
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 0);
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_BACKGROUND_LOCATION), 1);
         }
         else {
             //setPagesView();
@@ -96,7 +97,7 @@ class MainActivity : AppCompatActivity() {
 
         println("results: " + grantResults[0].toString() + "_" + grantResults[1].toString());
 
-        if(grantResults[1] == PackageManager.PERMISSION_DENIED && grantResults[0] == PackageManager.PERMISSION_DENIED) {
+        if(grantResults.any { it == PackageManager.PERMISSION_DENIED }) {
             setContentView(R.layout.permissions);
         }
         else {

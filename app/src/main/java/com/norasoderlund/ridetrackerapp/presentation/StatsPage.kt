@@ -16,12 +16,15 @@ import androidx.core.animation.doOnEnd
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import com.norasoderlund.ridetrackerapp.R
+import com.norasoderlund.ridetrackerapp.RecorderLocationEvent
 import com.norasoderlund.ridetrackerapp.RecorderStateEvent
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 
 class StatsPageFragment : Fragment() {
+    private lateinit var speedValue: TextView;
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -56,7 +59,7 @@ class StatsPageFragment : Fragment() {
         var elevationUnit = view.findViewById<TextView>(R.id.elevationUnit);
 
         var speedLabel = view.findViewById<TextView>(R.id.speedLabel);
-        var speedValue = view.findViewById<TextView>(R.id.speedValue);
+        speedValue = view.findViewById<TextView>(R.id.speedValue);
         var speedUnit = view.findViewById<TextView>(R.id.speedUnit);
 
         var distanceLabel = view.findViewById<TextView>(R.id.distanceLabel);
@@ -158,6 +161,19 @@ class StatsPageFragment : Fragment() {
             recordingButton.background.setTint(ContextCompat.getColor(context, R.color.brand));
 
             recordingButtonText.text = if(event.started) "Resume" else "Start";
+        }
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public fun onRecorderLocationEvent(event: RecorderLocationEvent) {
+        println("Stats page received");
+
+        var lastLocation = event.result.locations.last();
+
+        if(lastLocation != null) {
+            println("Not null, value: " + lastLocation.speed);
+
+            speedValue.text = String.format("%.1f", lastLocation.speed * 3.6f);
         }
     }
 }
