@@ -10,15 +10,10 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.graphics.PorterDuff
 import android.location.Location
-import android.location.LocationManager
-import android.opengl.Visibility
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.view.View
-import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -33,35 +28,31 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.drawable.DrawableCompat
 import androidx.viewpager2.widget.ViewPager2
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
-import androidx.wear.widget.CurvedTextView
-import com.google.android.gms.location.CurrentLocationRequest
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.norasoderlund.ridetrackerapp.R
+import com.norasoderlund.ridetrackerapp.Recorder
+import com.norasoderlund.ridetrackerapp.RecorderElapsedSecondsEvent
+import com.norasoderlund.ridetrackerapp.RecorderStateEvent
 import com.norasoderlund.ridetrackerapp.presentation.theme.RideTrackerTheme
 import org.greenrobot.eventbus.EventBus
+import org.greenrobot.eventbus.Subscribe
+import org.greenrobot.eventbus.ThreadMode
 import java.util.Calendar
-import kotlin.math.floor
 
 
 class MainActivity : AppCompatActivity() {
     var previousLocation: Int = 0;
     var isRecording: Boolean = false;
     var isLoading: Boolean = true;
-    var isPaused: Boolean = false;
-    var duration: Int = 0;
 
+    internal lateinit var recorder: Recorder;
     internal var lastLocation: Location? = null;
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,7 +60,6 @@ class MainActivity : AppCompatActivity() {
 
         super.onCreate(savedInstanceState);
 
-        println("created");
 
         val fineLocationPermissions = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION);
         val coarseLocationPermissions = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION);
@@ -84,6 +74,18 @@ class MainActivity : AppCompatActivity() {
             setLocationView();
         }
     }
+
+    override fun onStart() {
+        super.onStart();
+
+        EventBus.getDefault().register(this);
+    }
+
+    override fun onStop() {
+        super.onStop();
+
+        EventBus.getDefault().unregister(this);
+    };
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
@@ -142,6 +144,8 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("MissingPermission")
     fun setLocationView() {
+        recorder = Recorder(this);
+
         setContentView(R.layout.location);
 
         Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
@@ -150,33 +154,12 @@ class MainActivity : AppCompatActivity() {
 
         fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).addOnSuccessListener {
             location: Location ->
-                if(isLoading) {
-                    lastLocation = location;
+                lastLocation = location;
 
-                    isLoading = false;
-                }
-        };
-
-        fusedLocationClient.requestLocationUpdates(LocationRequest.Builder(10 * 1000).setWaitForAccurateLocation(true).build(), locationCallback, Looper.getMainLooper());
-    }
-
-    private val locationCallback = object : LocationCallback() {
-        override fun onLocationResult(result: LocationResult) {
-            if(result.lastLocation != null)
-                lastLocation = result.lastLocation;
-
-            EventBus.getDefault().post(MainActivityLocationEvent(result));
-
-            for (location in result.locations) {
-                println(String.format("Location update received at latitude %f longitude %f", location.latitude, location.longitude));
-
-                //moveToLocation(location)
-            }
-
-            if(isLoading)
                 isLoading = false;
-        }
+        };
     }
+
 
     var clockRunnable = object : Runnable {
         override fun run() {
@@ -197,18 +180,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    var durationRunnable = object : Runnable {
-        override fun run() {
-            if(isRecording && !isPaused) {
-                duration++;
-
-                val pausedTextIndicator = findViewById<TextView>(R.id.pausedTextIndicator);
-                pausedTextIndicator?.text = getFormattedDuration();
-
-                Handler(Looper.getMainLooper()).postDelayed(this, 1000);
-            }
-        }
-    }
 
     fun setPagesView() {
         //DataBindingUtil.setContentView<MainActivityBinding>(this, R.layout.map);
@@ -225,8 +196,6 @@ class MainActivity : AppCompatActivity() {
                 previousLocation = position;
             }
         });
-
-        setRecordingButton(false);
 
         clockRunnable.run();
 
@@ -260,17 +229,33 @@ class MainActivity : AppCompatActivity() {
         }*/
     };
 
-    fun getFormattedDuration(): String {
-        var secondsRemaining = duration.coerceAtLeast(1).toDouble();
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public fun onRecorderElapsedSecondsEvent(event: RecorderElapsedSecondsEvent) {
+        val pausedTextIndicator = findViewById<TextView>(R.id.pausedTextIndicator);
 
-        var hours = floor(secondsRemaining / (60 * 60));
-        secondsRemaining -= hours * 60 * 60;
-
-        var minutes = floor(secondsRemaining / 60);
-        secondsRemaining -= minutes * 60;
-
-        return String.format("%d:%02d:%02d", hours.toInt(), minutes.toInt(), secondsRemaining.toInt());
+        pausedTextIndicator?.text = event.formattedElapsedSeconds;
     }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public fun onRecorderStateEvent(event: RecorderStateEvent) {
+        val pausedTextIndicator = findViewById<TextView>(R.id.pausedTextIndicator)?: return;
+
+        if(event.started) {
+            if(event.paused) {
+                pausedTextIndicator.text = "Paused";
+                pausedTextIndicator.setTextColor(ContextCompat.getColor(this, R.color.red));
+            }
+            else {
+                pausedTextIndicator.text = recorder.getFormattedElapsedTime();
+                pausedTextIndicator.setTextColor(ContextCompat.getColor(this, R.color.blue));
+            }
+        }
+        else {
+            pausedTextIndicator.text = "Not recording";
+            pausedTextIndicator.setTextColor(ContextCompat.getColor(this, R.color.color));
+        }
+    }
+
 
     fun setPageIndicator(position: Int, enabled: Boolean) {
         var view: ImageView? = null;

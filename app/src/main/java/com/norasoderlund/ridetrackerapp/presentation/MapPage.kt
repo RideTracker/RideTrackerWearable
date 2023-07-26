@@ -10,10 +10,13 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
+import android.widget.TextView
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
@@ -30,6 +33,7 @@ import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.norasoderlund.ridetrackerapp.R
+import com.norasoderlund.ridetrackerapp.RecorderStateEvent
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -92,7 +96,7 @@ class MapPageFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState);
 
         val context = requireContext();
-        val activity = requireActivity();
+        val activity = requireActivity() as MainActivity;
 
         val swipeDismissal = view.findViewById<SwipeDismissFrameLayout>(R.id.swipeDismissal);
 
@@ -111,6 +115,10 @@ class MapPageFragment : Fragment() {
                 activity.onBackPressedDispatcher.onBackPressed();
             }
         })
+
+        view.findViewById<ImageButton>(R.id.recordingButton)?.setOnClickListener {
+            activity.recorder.toggle();
+        }
 
         val controller = AmbientModeSupport.attach(activity);
 
@@ -254,6 +262,24 @@ class MapPageFragment : Fragment() {
                     //moveToLocation(location)
                 }
             }
+        }
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public fun onRecorderStateEvent(event: RecorderStateEvent) {
+        val recordingButton = view?.findViewById<ImageButton>(R.id.recordingButton)?: return;
+
+        val context = requireContext();
+
+        if(event.started && !event.paused) {
+            recordingButton.setImageResource(R.drawable.baseline_stop_24);
+            recordingButton.background.setTint(ContextCompat.getColor(context, R.color.button));
+            recordingButton.setColorFilter(ContextCompat.getColor(context, R.color.color));
+        }
+        else {
+            recordingButton.setImageResource(R.drawable.baseline_play_arrow_24);
+            recordingButton.background.setTint(ContextCompat.getColor(context, R.color.brand));
+            recordingButton.setColorFilter(ContextCompat.getColor(context, R.color.color));
         }
     }
 }

@@ -3,10 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_height="match_parent"
-    android:layout_width="match_parent"
-    android:clipToOutline="false"
-    android:clipChildren="false"
-    android:clipToPadding="false">
+    android:layout_width="match_parent">
     <RelativeLayout
         android:layout_width="300dp"
         android:layout_height="match_parent"
@@ -18,7 +15,6 @@
         android:clipToPadding="false">
 
         <LinearLayout
-            android:id="@+id/sliderLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
@@ -27,72 +23,11 @@
             android:clipToPadding="false">
 
             <androidx.constraintlayout.widget.ConstraintLayout
-                android:id="@+id/elevationButton"
                 android:layout_width="0dp"
                 android:layout_weight="1"
                 android:layout_height="wrap_content"
                 android:scaleX="0.66"
                 android:scaleY="0.66">
-
-                <TextView
-                    android:id="@+id/elevationLabel"
-                    android:layout_width="match_parent"
-                    android:layout_height="25dp"
-                    android:autoSizeMaxTextSize="100sp"
-                    android:autoSizeMinTextSize="12sp"
-                    android:autoSizeStepGranularity="2sp"
-                    android:autoSizeTextType="uniform"
-                    android:gravity="center"
-                    android:includeFontPadding="false"
-                    android:text="Elevation"
-                    android:textAllCaps="true"
-                    android:textColor="@color/color"
-                    android:textFontWeight="500"
-                    app:layout_constraintBottom_toTopOf="@+id/elevationValue"
-                    app:layout_constraintEnd_toEndOf="parent"
-                    app:layout_constraintStart_toStartOf="parent"
-                    app:layout_constraintTop_toTopOf="parent" />
-
-                <TextView
-                    android:id="@+id/elevationValue"
-                    android:layout_width="match_parent"
-                    android:layout_height="45dp"
-                    android:autoSizeMaxTextSize="100sp"
-                    android:autoSizeMinTextSize="12sp"
-                    android:autoSizeStepGranularity="2sp"
-                    android:autoSizeTextType="uniform"
-                    android:gravity="center"
-                    android:includeFontPadding="false"
-                    android:text="24.6"
-                    android:textColor="@color/color"
-                    android:textFontWeight="500"
-                    app:layout_constraintBottom_toTopOf="@+id/elevationUnit"
-                    app:layout_constraintEnd_toEndOf="parent"
-                    app:layout_constraintStart_toStartOf="parent" />
-
-                <TextView
-                    android:id="@+id/elevationUnit"
-                    android:layout_width="match_parent"
-                    android:layout_height="20dp"
-                    android:autoSizeMaxTextSize="100sp"
-                    android:autoSizeMinTextSize="12sp"
-                    android:autoSizeStepGranularity="2sp"
-                    android:autoSizeTextType="uniform"
-                    android:includeFontPadding="false"
-                    android:text="m"
-                    android:textAlignment="center"
-                    android:textAllCaps="true"
-                    android:textColor="@color/color"
-                    app:layout_constraintBottom_toBottomOf="parent"
-                    app:layout_constraintEnd_toEndOf="parent"
-                    app:layout_constraintStart_toStartOf="parent" />
-            </androidx.constraintlayout.widget.ConstraintLayout>
-
-            <androidx.constraintlayout.widget.ConstraintLayout
-                android:id="@+id/speedButton"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content">
 
                 <TextView
                     android:id="@+id/speedLabel"
@@ -106,7 +41,7 @@
                     android:includeFontPadding="false"
                     android:text="Speed"
                     android:textAllCaps="true"
-                    android:textColor="@color/brand"
+                    android:textColor="@color/color"
                     android:textFontWeight="500"
                     app:layout_constraintBottom_toTopOf="@+id/speedValue"
                     app:layout_constraintEnd_toEndOf="parent"
@@ -124,7 +59,7 @@
                     android:gravity="center"
                     android:includeFontPadding="false"
                     android:text="24.6"
-                    android:textColor="@color/brand"
+                    android:textColor="@color/color"
                     android:textFontWeight="500"
                     app:layout_constraintBottom_toTopOf="@+id/speedUnit"
                     app:layout_constraintEnd_toEndOf="parent"
@@ -142,6 +77,65 @@
                     android:text="km/h"
                     android:textAlignment="center"
                     android:textAllCaps="true"
+                    android:textColor="@color/color"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintStart_toStartOf="parent" />
+            </androidx.constraintlayout.widget.ConstraintLayout>
+
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content">
+
+                <TextView
+                    android:id="@+id/elevationLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="25dp"
+                    android:autoSizeMaxTextSize="100sp"
+                    android:autoSizeMinTextSize="12sp"
+                    android:autoSizeStepGranularity="2sp"
+                    android:autoSizeTextType="uniform"
+                    android:gravity="center"
+                    android:includeFontPadding="false"
+                    android:text="Elevation"
+                    android:textAllCaps="true"
+                    android:textColor="@color/brand"
+                    android:textFontWeight="500"
+                    app:layout_constraintBottom_toTopOf="@+id/elevationValue"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toTopOf="parent" />
+
+                <TextView
+                    android:id="@+id/elevationValue"
+                    android:layout_width="match_parent"
+                    android:layout_height="45dp"
+                    android:autoSizeMaxTextSize="100sp"
+                    android:autoSizeMinTextSize="12sp"
+                    android:autoSizeStepGranularity="2sp"
+                    android:autoSizeTextType="uniform"
+                    android:gravity="center"
+                    android:includeFontPadding="false"
+                    android:text="24.6"
+                    android:textColor="@color/brand"
+                    android:textFontWeight="500"
+                    app:layout_constraintBottom_toTopOf="@+id/elevationUnit"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintStart_toStartOf="parent" />
+
+                <TextView
+                    android:id="@+id/elevationUnit"
+                    android:layout_width="match_parent"
+                    android:layout_height="20dp"
+                    android:autoSizeMaxTextSize="100sp"
+                    android:autoSizeMinTextSize="12sp"
+                    android:autoSizeStepGranularity="2sp"
+                    android:autoSizeTextType="uniform"
+                    android:includeFontPadding="false"
+                    android:text="km/h"
+                    android:textAlignment="center"
+                    android:textAllCaps="true"
                     android:textColor="@color/brand"
                     app:layout_constraintBottom_toBottomOf="parent"
                     app:layout_constraintEnd_toEndOf="parent"
@@ -149,7 +143,6 @@
             </androidx.constraintlayout.widget.ConstraintLayout>
 
             <androidx.constraintlayout.widget.ConstraintLayout
-                android:id="@+id/distanceButton"
                 android:layout_width="0dp"
                 android:layout_weight="1"
                 android:layout_height="wrap_content"
@@ -211,40 +204,4 @@
             </androidx.constraintlayout.widget.ConstraintLayout>
         </LinearLayout>
     </RelativeLayout>
-
-    <androidx.constraintlayout.widget.ConstraintLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent">
-        <LinearLayout
-            android:id="@+id/statsRecordingButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/rounded_button"
-            android:backgroundTint="@color/brand"
-            android:gravity="center_vertical"
-            android:paddingHorizontal="1dp"
-            android:paddingVertical="1dp"
-            android:layout_marginBottom="15dp"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent">
-
-            <ImageView
-                android:id="@+id/statsRecordingButtonImage"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/baseline_play_arrow_24" />
-
-            <TextView
-                android:id="@+id/statsRecordingButtonText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:paddingEnd="10dp"
-                android:text="@string/start"
-                android:textAppearance="@android:style/TextAppearance.Material.Button"
-                android:textFontWeight="500"
-                android:textSize="15sp" />
-        </LinearLayout>
-    </androidx.constraintlayout.widget.ConstraintLayout>
 </androidx.wear.widget.BoxInsetLayout>
