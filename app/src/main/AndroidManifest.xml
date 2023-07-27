@@ -27,7 +27,8 @@
             android:name=".complication.MainComplicationService"
             android:exported="true"
             android:label="@string/complication_label"
-            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER"
+            android:foregroundServiceType="location">
             <intent-filter>
                 <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
             </intent-filter>

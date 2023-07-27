@@ -49,8 +49,6 @@ class StatsPageFragment : Fragment() {
         activity = requireActivity() as MainActivity;
 
         EventBus.getDefault().register(this);
-
-        updateRecordingButtonState(false);
     }
 
     override fun onStop() {
@@ -62,7 +60,7 @@ class StatsPageFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState);
 
-        var activity = requireActivity() as MainActivity;
+        activity = requireActivity() as MainActivity;
         var context = requireContext();
 
         sliderLayout = view.findViewById<LinearLayout>(R.id.sliderLayout);
@@ -130,6 +128,8 @@ class StatsPageFragment : Fragment() {
             setButtonColor(speedLabel, speedValue, speedUnit, textColor);
             setButtonColor(distanceLabel, distanceValue, distanceUnit, brandColor);
         }
+
+        updateRecordingButtonState(false);
 
         //if(activity.recorder.started && !activity.recorder.paused)
         //    setPageState(false, false);
@@ -208,9 +208,9 @@ class StatsPageFragment : Fragment() {
 
 
         if(!animate) {
-            sliderLayout?.translationY = sliderLayoutValues[0];
-            buttonSlider?.translationY = buttonSliderValues[0];
-            finishButton?.alpha = finishButtonValues[0];
+            sliderLayout?.translationY = sliderLayoutValues[1];
+            buttonSlider?.translationY = buttonSliderValues[1];
+            finishButton?.alpha = finishButtonValues[1];
         }
         else {
             if(sliderLayout?.translationY != sliderLayoutValues[1]) {

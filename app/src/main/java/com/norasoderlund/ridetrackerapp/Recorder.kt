@@ -1,11 +1,14 @@
 package com.norasoderlund.ridetrackerapp
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.location.Location
 import android.location.LocationManager
 import android.os.Handler
 import android.os.Looper
 import android.widget.TextView
+import androidx.health.services.client.HealthServices
+import androidx.health.services.client.HealthServicesClient
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.Granularity
 import com.google.android.gms.location.LocationCallback
@@ -25,12 +28,14 @@ import kotlin.math.floor
 
 class Recorder {
     private lateinit var activity: MainActivity;
+    private lateinit var healthClient: HealthServicesClient;
 
     private lateinit var fusedLocationProviderClient: FusedLocationProviderClient;
 
     @SuppressLint("MissingPermission")
     constructor(activity: MainActivity) {
         this.activity = activity;
+        this.healthClient = HealthServices.getClient(activity);
 
         this.fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(activity);
     }
