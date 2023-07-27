@@ -111,10 +111,6 @@ class MapPageFragment : Fragment() {
             activity.recorder.toggle();
         }
 
-        val controller = AmbientModeSupport.attach(activity);
-
-        println("Is ambient enabled: " + controller.isAmbient);
-
         setTrafficButton(false);
         view.findViewById<ImageButton>(R.id.trafficButton)?.setOnClickListener { setTrafficButton(!trafficEnabled); }
 
@@ -160,12 +156,12 @@ class MapPageFragment : Fragment() {
                 .icon(BitmapDescriptorFactory.fromBitmap(getScaledMarkerIcon(R.drawable.location, 32, 32)))
         );
 
-        if(activity.lastLocation != null) {
+        /*if(activity.lastLocation != null) {
             val coordinate = LatLng(activity.lastLocation!!.latitude, activity.lastLocation!!.longitude);
 
             this.googleMapLocationMarker!!.position = coordinate;
             googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(coordinate, 15f));
-        }
+        }*/
 
         /*val lastLocation = fusedLocationClient.lastLocation;
 
@@ -265,7 +261,7 @@ class MapPageFragment : Fragment() {
     }
 
     private fun setMapCameraToBounds() {
-        var minLat: Double? = null;
+        /*var minLat: Double? = null;
         var maxLat: Double? = null;
 
         var minLng: Double? = null;
@@ -291,28 +287,25 @@ class MapPageFragment : Fragment() {
         builder.include(LatLng(minLat!!, minLng!!));
         builder.include(LatLng(maxLat!!, maxLng!!));
 
-        googleMap?.moveCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), 100));
+        googleMap?.moveCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), 100));*/
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     public fun onRecorderLocationEvent(event: RecorderLocationEvent) {
         if(googleMap != null) {
-            if (event.result.lastLocation != null) {
-                val coordinate =
-                    LatLng(event.result.lastLocation!!.latitude, event.result.lastLocation!!.longitude);
+            val coordinate = LatLng(event.location.latitude, event.location.longitude);
 
-                if(currentPolyline == null)
-                    currentPolyline = googleMap?.addPolyline(PolylineOptions().color(ContextCompat.getColor(requireContext(), R.color.brand)));
+            if(currentPolyline == null)
+                currentPolyline = googleMap?.addPolyline(PolylineOptions().color(ContextCompat.getColor(requireContext(), R.color.brand)));
 
-                var points = currentPolyline!!.points;
-                points.add(coordinate);
-                currentPolyline!!.points = points;
+            var points = currentPolyline!!.points;
+            points.add(coordinate);
+            currentPolyline!!.points = points;
 
-                googleMap!!.animateCamera(CameraUpdateFactory.newLatLng(coordinate));
+            googleMap!!.animateCamera(CameraUpdateFactory.newLatLng(coordinate));
 
-                if (googleMapLocationMarker != null)
-                    googleMapLocationMarker!!.position = coordinate;
-            }
+            if (googleMapLocationMarker != null)
+                googleMapLocationMarker!!.position = coordinate;
         }
     }
 }

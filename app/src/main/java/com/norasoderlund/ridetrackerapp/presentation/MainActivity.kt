@@ -17,6 +17,7 @@ import android.os.Looper
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.collection.arrayMapOf
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,17 +31,32 @@ import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.health.services.client.ExerciseUpdateCallback
+import androidx.health.services.client.HealthServices
+import androidx.health.services.client.HealthServicesClient
+import androidx.health.services.client.data.Availability
+import androidx.health.services.client.data.DataType
+import androidx.health.services.client.data.DataTypeAvailability
+import androidx.health.services.client.data.ExerciseLapSummary
+import androidx.health.services.client.data.ExerciseType
+import androidx.health.services.client.data.ExerciseUpdate
+import androidx.health.services.client.data.WarmUpConfig
 import androidx.viewpager2.widget.ViewPager2
+import androidx.wear.ambient.AmbientModeSupport
+import androidx.wear.ambient.AmbientModeSupport.AmbientController
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
+import androidx.health.services.client.data.LocationAvailability
+import androidx.room.Room
+import androidx.room.RoomDatabase
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.norasoderlund.ridetrackerapp.R
 import com.norasoderlund.ridetrackerapp.Recorder
 import com.norasoderlund.ridetrackerapp.RecorderElapsedSecondsEvent
 import com.norasoderlund.ridetrackerapp.RecorderStateEvent
+import com.norasoderlund.ridetrackerapp.database.SessionDatabase
 import com.norasoderlund.ridetrackerapp.presentation.theme.RideTrackerTheme
+import kotlinx.coroutines.guava.await
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -48,18 +64,27 @@ import java.util.Calendar
 
 
 class MainActivity : AppCompatActivity() {
-    var previousLocation: Int = 0;
-    var isRecording: Boolean = false;
-    var isLoading: Boolean = true;
+    private var previousPage: Int = 1;
+    private var isLoading: Boolean = true;
 
     internal lateinit var recorder: Recorder;
-    internal var lastLocation: Location? = null;
+
+    private lateinit var ambientController: AmbientController;
+    private lateinit var healthClient: HealthServicesClient;
+    private lateinit var database: SessionDatabase;
 
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.AppTheme_NoActionBar);
 
         super.onCreate(savedInstanceState);
 
+        ambientController = AmbientModeSupport.attach(this);
+        println("Is ambient enabled: " + ambientController.isAmbient);
+
+        healthClient = HealthServices.getClient(this);
+        healthClient.exerciseClient.setUpdateCallback(excerciseUpdateCallback);
+
+        database = Room.databaseBuilder(applicationContext, SessionDatabase::class.java, "sessions").build();
 
         val fineLocationPermissions = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION);
         val coarseLocationPermissions = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION);
@@ -143,22 +168,69 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    @SuppressLint("MissingPermission")
-    fun setLocationView() {
-        recorder = Recorder(this);
+    private fun setLocationView() {
+        recorder = Recorder(this, healthClient, database);
 
         setContentView(R.layout.location);
 
         Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
 
-        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+        val warmUpConfig = WarmUpConfig(ExerciseType.BIKING, setOf(DataType.LOCATION));
 
-        fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).addOnSuccessListener {
-            location: Location ->
-                lastLocation = location;
+        healthClient.exerciseClient.prepareExerciseAsync(warmUpConfig);
 
-                isLoading = false;
-        };
+                //lastLocation = location;
+
+                //isLoading = false;
+    }
+
+    private val excerciseUpdateCallback = object : ExerciseUpdateCallback {
+        override fun onExerciseUpdateReceived(update: ExerciseUpdate) {
+            val exerciseStateInfo = update.exerciseStateInfo
+            val activeDuration = update.activeDurationCheckpoint
+            val latestMetrics = update.latestMetrics
+            val latestGoals = update.latestAchievedGoals
+
+            latestMetrics.getData(DataType.LOCATION).forEach {
+
+            }
+        }
+
+        override fun onLapSummaryReceived(lapSummary: ExerciseLapSummary) {
+            // For ExerciseTypes that support laps, this is called when a lap is marked.
+        }
+
+        override fun onRegistered() {
+
+        }
+
+        override fun onRegistrationFailed(throwable: Throwable) {
+
+        }
+
+        override fun onAvailabilityChanged(
+            dataType: DataType<*, *>,
+            availability: Availability
+        ) {
+            // Called when the availability of a particular DataType changes.
+            when {
+                // Relates to Location/GPS.
+                availability is LocationAvailability -> {
+                    if(isLoading) {
+                        when(availability) {
+                            LocationAvailability.ACQUIRED_TETHERED, LocationAvailability.ACQUIRED_UNTETHERED -> {
+                                isLoading = false;
+                            }
+                        }
+                    }
+                }
+
+                // Relates to another DataType.
+                availability is DataTypeAvailability -> {
+
+                }
+            }
+        }
     }
 
 
@@ -187,17 +259,14 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.map);
 
         val viewPager2 = findViewById<ViewPager2>(R.id.pager);
-
         viewPager2.adapter = PageAdapter(this);
-
         viewPager2.setCurrentItem(1, false);
-
         viewPager2.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
-                setPageIndicator(previousLocation, false);
+                setPageIndicator(previousPage, false);
                 setPageIndicator(position, true);
 
-                previousLocation = position;
+                previousPage = position;
             }
         });
 

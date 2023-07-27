@@ -245,15 +245,8 @@ class StatsPageFragment : Fragment() {
     public fun onRecorderLocationEvent(event: RecorderLocationEvent) {
         println("Stats page received");
 
-        var lastLocation = event.result.locations.last();
-
-        if(lastLocation != null) {
-            println("Not null, value: " + lastLocation.speed);
-
-            speedValue.text = String.format("%.1f", lastLocation.speed * 3.6f);
-        }
-
-        elevationValue.text = activity.recorder.accumulatedElevation.roundToInt().toString();
-        distanceValue.text = (((activity.recorder.accumulatedDistance / 1000) * 10.0).roundToInt() / 10.0).toString();
+        //speedValue.text = String.format("%.1f", lastLocation.speed * 3.6f);
+        //elevationValue.text = activity.recorder.accumulatedElevation.roundToInt().toString();
+        //distanceValue.text = (((activity.recorder.accumulatedDistance / 1000) * 10.0).roundToInt() / 10.0).toString();
     }
 }
