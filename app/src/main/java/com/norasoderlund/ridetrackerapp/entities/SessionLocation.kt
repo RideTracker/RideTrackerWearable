@@ -16,7 +16,7 @@ data class SessionLocation(
     val longitude: Double,
 
     @ColumnInfo(name = "altitude")
-    val altitude: Double,
+    val altitude: Double?,
 
     @ColumnInfo(name = "timestamp")
     val timestamp: Long

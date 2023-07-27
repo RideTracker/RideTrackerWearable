@@ -156,6 +156,12 @@ class MapPageFragment : Fragment() {
                 .icon(BitmapDescriptorFactory.fromBitmap(getScaledMarkerIcon(R.drawable.location, 32, 32)))
         );
 
+        val coordinate = LatLng(0.0, 0.0);
+
+        this.googleMapLocationMarker!!.position = coordinate;
+
+        googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(coordinate, 15f));
+
         /*if(activity.lastLocation != null) {
             val coordinate = LatLng(activity.lastLocation!!.latitude, activity.lastLocation!!.longitude);
 

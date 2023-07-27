@@ -6,7 +6,7 @@ import com.norasoderlund.ridetrackerapp.dao.SessionDao
 import com.norasoderlund.ridetrackerapp.entities.Session
 import com.norasoderlund.ridetrackerapp.entities.SessionLocation
 
-@Database(entities = [ Session::class, SessionLocation::class ], version = 1, exportSchema = false)
+@Database(entities = [ Session::class, SessionLocation::class ], version = 2, exportSchema = false)
 abstract class SessionDatabase : RoomDatabase() {
     abstract fun getDao(): SessionDao;
 }

@@ -11,6 +11,7 @@ import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.location.Location
+import android.os.AsyncTask
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -38,6 +39,9 @@ import androidx.health.services.client.data.Availability
 import androidx.health.services.client.data.DataType
 import androidx.health.services.client.data.DataTypeAvailability
 import androidx.health.services.client.data.ExerciseLapSummary
+import androidx.health.services.client.data.ExerciseTrackedStatus.Companion.NO_EXERCISE_IN_PROGRESS
+import androidx.health.services.client.data.ExerciseTrackedStatus.Companion.OTHER_APP_IN_PROGRESS
+import androidx.health.services.client.data.ExerciseTrackedStatus.Companion.OWNED_EXERCISE_IN_PROGRESS
 import androidx.health.services.client.data.ExerciseType
 import androidx.health.services.client.data.ExerciseUpdate
 import androidx.health.services.client.data.WarmUpConfig
@@ -47,6 +51,8 @@ import androidx.wear.ambient.AmbientModeSupport.AmbientController
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import androidx.health.services.client.data.LocationAvailability
+import androidx.health.services.client.endExercise
+import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.google.android.material.progressindicator.CircularProgressIndicator
@@ -56,7 +62,9 @@ import com.norasoderlund.ridetrackerapp.RecorderElapsedSecondsEvent
 import com.norasoderlund.ridetrackerapp.RecorderStateEvent
 import com.norasoderlund.ridetrackerapp.database.SessionDatabase
 import com.norasoderlund.ridetrackerapp.presentation.theme.RideTrackerTheme
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.guava.await
+import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -82,18 +90,22 @@ class MainActivity : AppCompatActivity() {
         println("Is ambient enabled: " + ambientController.isAmbient);
 
         healthClient = HealthServices.getClient(this);
-        healthClient.exerciseClient.setUpdateCallback(excerciseUpdateCallback);
 
-        database = Room.databaseBuilder(applicationContext, SessionDatabase::class.java, "sessions").build();
+        database = Room.databaseBuilder(applicationContext, SessionDatabase::class.java, "sessions").allowMainThreadQueries().fallbackToDestructiveMigration().build();
 
-        val fineLocationPermissions = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION);
-        val coarseLocationPermissions = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION);
-        val backgroundLocationPermissions = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION);
+        val permissions = mapOf<String, Int>(
+            Manifest.permission.ACCESS_FINE_LOCATION to ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION),
+            Manifest.permission.ACCESS_COARSE_LOCATION to ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION),
+            Manifest.permission.ACCESS_BACKGROUND_LOCATION to ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION),
+            Manifest.permission.BODY_SENSORS to ActivityCompat.checkSelfPermission(this, Manifest.permission.BODY_SENSORS),
+            Manifest.permission.ACTIVITY_RECOGNITION to ActivityCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION)
+        );
 
-        if (fineLocationPermissions != PackageManager.PERMISSION_GRANTED || coarseLocationPermissions != PackageManager.PERMISSION_GRANTED || backgroundLocationPermissions != PackageManager.PERMISSION_GRANTED) {
+
+        if (permissions.any { permission -> permission.value == PackageManager.PERMISSION_DENIED }) {
             setContentView(R.layout.permissions);
 
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_BACKGROUND_LOCATION), 1);
+            ActivityCompat.requestPermissions(this, permissions.filter { permission -> permission.value == PackageManager.PERMISSION_DENIED }.keys.toTypedArray(), 1);
         }
         else {
             //setPagesView();
@@ -165,19 +177,61 @@ class MainActivity : AppCompatActivity() {
     var onLoadingComplete = object : Runnable {
         override fun run() {
             setPagesView();
+
+            println("onLoadingComplete");
         }
     }
 
     private fun setLocationView() {
-        recorder = Recorder(this, healthClient, database);
+        lifecycleScope.launch {
+            val activity: MainActivity = this@MainActivity;
 
-        setContentView(R.layout.location);
+            val exerciseInfo = healthClient.exerciseClient.getCurrentExerciseInfoAsync().await();
 
-        Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
+            when (exerciseInfo.exerciseTrackedStatus) {
+                // Warn user before continuing, will stop the existing workout.
+                OTHER_APP_IN_PROGRESS -> {
+                    println("other exercise in progress");
 
-        val warmUpConfig = WarmUpConfig(ExerciseType.BIKING, setOf(DataType.LOCATION));
+                    setLocationView();
+                }
 
-        healthClient.exerciseClient.prepareExerciseAsync(warmUpConfig);
+                // This app has an existing workout.
+                OWNED_EXERCISE_IN_PROGRESS -> {
+                    println("owned exercise in progress");
+
+                    recorder = Recorder(activity, healthClient, database);
+
+                    recorder.startExerciseUpdates(true);
+
+                    setPagesView();
+
+                    isLoading = false;
+                }
+
+                // Start a fresh workout.
+                NO_EXERCISE_IN_PROGRESS -> {
+                    println("no exercise in progress");
+
+                    recorder = Recorder(activity, healthClient, database);
+
+                    setContentView(R.layout.location);
+
+                    val warmUpConfig = WarmUpConfig(ExerciseType.BIKING, setOf(DataType.LOCATION));
+
+                    healthClient.exerciseClient.setUpdateCallback(excerciseUpdateCallback);
+
+                    Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
+
+                    healthClient.exerciseClient.prepareExerciseAsync(warmUpConfig).await();
+
+                    recorder.startExerciseUpdates();
+
+                    isLoading = false;
+
+                }
+            }
+        }
 
                 //lastLocation = location;
 
@@ -186,36 +240,31 @@ class MainActivity : AppCompatActivity() {
 
     private val excerciseUpdateCallback = object : ExerciseUpdateCallback {
         override fun onExerciseUpdateReceived(update: ExerciseUpdate) {
-            val exerciseStateInfo = update.exerciseStateInfo
-            val activeDuration = update.activeDurationCheckpoint
-            val latestMetrics = update.latestMetrics
-            val latestGoals = update.latestAchievedGoals
-
-            latestMetrics.getData(DataType.LOCATION).forEach {
-
-            }
+            println("onExerciseUpdateReceived");
         }
 
         override fun onLapSummaryReceived(lapSummary: ExerciseLapSummary) {
-            // For ExerciseTypes that support laps, this is called when a lap is marked.
+            println("onLapSummaryReceived");
         }
 
         override fun onRegistered() {
-
+            println("onRegistered");
         }
 
         override fun onRegistrationFailed(throwable: Throwable) {
-
+            println("onRegistrationFailed");
         }
 
         override fun onAvailabilityChanged(
             dataType: DataType<*, *>,
             availability: Availability
         ) {
+            println("onAvailabilityChanged");
             // Called when the availability of a particular DataType changes.
             when {
-                // Relates to Location/GPS.
-                availability is LocationAvailability -> {
+                // Relates to another DataType.
+                availability is DataTypeAvailability -> {
+                    println("DataTypeAvailability");
                     if(isLoading) {
                         when(availability) {
                             LocationAvailability.ACQUIRED_TETHERED, LocationAvailability.ACQUIRED_UNTETHERED -> {
@@ -223,11 +272,6 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
                     }
-                }
-
-                // Relates to another DataType.
-                availability is DataTypeAvailability -> {
-
                 }
             }
         }
@@ -255,6 +299,8 @@ class MainActivity : AppCompatActivity() {
 
 
     fun setPagesView() {
+        println("setPagesView");
+
         //DataBindingUtil.setContentView<MainActivityBinding>(this, R.layout.map);
         setContentView(R.layout.map);
 

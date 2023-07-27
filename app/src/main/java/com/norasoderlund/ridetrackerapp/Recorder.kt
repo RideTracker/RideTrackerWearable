@@ -22,6 +22,7 @@ import androidx.health.services.client.data.ExerciseType
 import androidx.health.services.client.data.ExerciseUpdate
 import androidx.health.services.client.data.LocationAccuracy
 import androidx.health.services.client.data.LocationAvailability
+import androidx.health.services.client.resumeExercise
 import androidx.health.services.client.startExercise
 import androidx.room.RoomDatabase
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -64,18 +65,24 @@ class Recorder {
         this.dao = database.getDao();
 
         dao.create(Session(sessionId));
+    }
 
-        //healthClient.measureClient.registerMeasureCallback(DataType.Companion.HEART_RATE_BPM, heartRateCallback)
+    internal fun startExerciseUpdates(resume: Boolean = false) {
+        println("Recorder: startExerciseUpdates");
 
         healthClient.exerciseClient.setUpdateCallback(excerciseUpdateCallback);
 
-        val exerciseConfig = ExerciseConfig(ExerciseType.BIKING, setOf(DataType.LOCATION, DataType.SPEED), true, true);
+        if(!resume) {
+            val exerciseConfig = ExerciseConfig(ExerciseType.BIKING, setOf(DataType.LOCATION, DataType.SPEED), true, true);
 
-        healthClient.exerciseClient.startExerciseAsync(exerciseConfig);
+            healthClient.exerciseClient.startExerciseAsync(exerciseConfig);
+        }
     }
 
     private val excerciseUpdateCallback = object : ExerciseUpdateCallback {
         override fun onExerciseUpdateReceived(update: ExerciseUpdate) {
+            println("Recorder: onExerciseUpdate");
+
             val exerciseStateInfo = update.exerciseStateInfo;
             val activeDuration = update.activeDurationCheckpoint;
             val latestMetrics = update.latestMetrics;
@@ -84,7 +91,11 @@ class Recorder {
             val locationUpdates = latestMetrics.getData(DataType.LOCATION);
 
             if(locationUpdates.isNotEmpty()) {
-                val sessionLocations = locationUpdates.map { location -> SessionLocation(sessionId, location.value.latitude, location.value.longitude, location.value.altitude, location.timeDurationFromBoot.toMillis()) };
+                val sessionLocations = locationUpdates.map { location ->
+                    println(String.format("New location: latitude %.4f longitude %.4f altitude %f", location.value.latitude, location.value.longitude, location.value.altitude));
+
+                    SessionLocation(sessionId, location.value.latitude, location.value.longitude, location.value.altitude, location.timeDurationFromBoot.toMillis())
+                };
 
                 if(started && !paused) {
                     sessionLocations.forEach { location ->
@@ -99,21 +110,24 @@ class Recorder {
         }
 
         override fun onLapSummaryReceived(lapSummary: ExerciseLapSummary) {
+            println("Recorder: onLapSummaryReceived");
+
             // For ExerciseTypes that support laps, this is called when a lap is marked.
         }
 
         override fun onRegistered() {
-
+            println("Recorder: onRegistered");
         }
 
         override fun onRegistrationFailed(throwable: Throwable) {
-
+            println("Recorder: onRegistrationFailed");
         }
 
         override fun onAvailabilityChanged(
             dataType: DataType<*, *>,
             availability: Availability
         ) {
+            println("Recorder: onAvailabilityChanged");
             // Called when the availability of a particular DataType changes.
             when {
                 // Relates to Location/GPS.
