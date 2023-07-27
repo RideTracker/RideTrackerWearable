@@ -18,4 +18,5 @@
     <string name="elevation">Elevation</string>
     <string name="distance">Distance</string>
     <string name="pause">Pause</string>
+    <string name="finish">Finish</string>
 </resources>

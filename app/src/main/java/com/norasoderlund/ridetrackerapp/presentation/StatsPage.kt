@@ -30,6 +30,11 @@ class StatsPageFragment : Fragment() {
 
     private lateinit var activity: MainActivity;
 
+    private var sliderLayout: LinearLayout? = null;
+    private var buttonSlider: LinearLayout? = null;
+
+    private var finishButton: LinearLayout? = null;
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -45,7 +50,7 @@ class StatsPageFragment : Fragment() {
 
         EventBus.getDefault().register(this);
 
-        updateRecordingButtonState();
+        updateRecordingButtonState(false);
     }
 
     override fun onStop() {
@@ -59,6 +64,11 @@ class StatsPageFragment : Fragment() {
 
         var activity = requireActivity() as MainActivity;
         var context = requireContext();
+
+        sliderLayout = view.findViewById<LinearLayout>(R.id.sliderLayout);
+        buttonSlider = view.findViewById<LinearLayout>(R.id.buttonSlider);
+
+        finishButton = view.findViewById<LinearLayout>(R.id.statsFinishButton);
 
         var brandColor = ContextCompat.getColor(context, R.color.brand);
         var textColor = ContextCompat.getColor(context, R.color.color);
@@ -80,7 +90,7 @@ class StatsPageFragment : Fragment() {
         }
 
         view.findViewById<ConstraintLayout>(R.id.elevationButton)?.setOnClickListener {
-            setSliderAnimation(view.findViewById<LinearLayout>(R.id.sliderLayout), currentSliderDp, 66f);
+            setSliderAnimation(sliderLayout!!, currentSliderDp, 66f);
 
             currentSliderDp = 66f;
 
@@ -94,7 +104,7 @@ class StatsPageFragment : Fragment() {
         }
 
         view.findViewById<ConstraintLayout>(R.id.speedButton)?.setOnClickListener {
-            setSliderAnimation(view.findViewById<LinearLayout>(R.id.sliderLayout), currentSliderDp, 0f);
+            setSliderAnimation(sliderLayout!!, currentSliderDp, 0f);
 
             currentSliderDp = 0f;
 
@@ -108,7 +118,7 @@ class StatsPageFragment : Fragment() {
         }
 
         view.findViewById<ConstraintLayout>(R.id.distanceButton)?.setOnClickListener {
-            setSliderAnimation(view.findViewById<LinearLayout>(R.id.sliderLayout), currentSliderDp, -66f);
+            setSliderAnimation(sliderLayout!!, currentSliderDp, -66f);
 
             currentSliderDp = -66f;
 
@@ -120,6 +130,9 @@ class StatsPageFragment : Fragment() {
             setButtonColor(speedLabel, speedValue, speedUnit, textColor);
             setButtonColor(distanceLabel, distanceValue, distanceUnit, brandColor);
         }
+
+        //if(activity.recorder.started && !activity.recorder.paused)
+        //    setPageState(false, false);
     }
 
     fun setButtonColor(label: TextView, value: TextView, unit: TextView, color: Int) {
@@ -156,7 +169,7 @@ class StatsPageFragment : Fragment() {
         return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp, requireContext().resources.displayMetrics);
     }
 
-    fun updateRecordingButtonState() {
+    fun updateRecordingButtonState(animate: Boolean) {
         val recordingButton = view?.findViewById<LinearLayout>(R.id.statsRecordingButton)?: return;
         val recordingButtonImage = view?.findViewById<ImageView>(R.id.statsRecordingButtonImage)?: return;
         val recordingButtonText = view?.findViewById<TextView>(R.id.statsRecordingButtonText)?: return;
@@ -178,11 +191,54 @@ class StatsPageFragment : Fragment() {
 
             recordingButtonText.text = if(activity.recorder.started) "Resume" else "Start";
         }
+
+        setPageState(activity.recorder.started, activity.recorder.paused, animate);
+    }
+
+    private fun setPageState(started: Boolean, paused: Boolean, animate: Boolean) {
+        val sliderLayoutValues = mutableListOf<Float>(getDpPixels(-24f), 0f);
+        val buttonSliderValues = mutableListOf<Float>(0f, getDpPixels(24f + 15f));
+        val finishButtonValues = mutableListOf<Float>(1f, 0f);
+
+        if(!started || paused) {
+            sliderLayoutValues.reverse();
+            buttonSliderValues.reverse();
+            finishButtonValues.reverse();
+        }
+
+
+        if(!animate) {
+            sliderLayout?.translationY = sliderLayoutValues[0];
+            buttonSlider?.translationY = buttonSliderValues[0];
+            finishButton?.alpha = finishButtonValues[0];
+        }
+        else {
+            if(sliderLayout?.translationY != sliderLayoutValues[1]) {
+                ObjectAnimator.ofFloat(sliderLayout!!,  "translationY", sliderLayoutValues[0], sliderLayoutValues[1]).apply {
+                    duration = 500
+                    start()
+                }
+            }
+
+            if(buttonSlider?.translationY != buttonSliderValues[1]) {
+                ObjectAnimator.ofFloat(buttonSlider!!,  "translationY", buttonSliderValues[0], buttonSliderValues[1]).apply {
+                    duration = 500
+                    start()
+                }
+            }
+
+            if(finishButton?.alpha != finishButtonValues[1]) {
+                ObjectAnimator.ofFloat(finishButton!!,  "alpha", finishButtonValues[0], finishButtonValues[1]).apply {
+                    duration = 500
+                    start()
+                }
+            }
+        }
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     public fun onRecorderStateEvent(event: RecorderStateEvent) {
-        updateRecordingButtonState();
+        updateRecordingButtonState(true);
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
