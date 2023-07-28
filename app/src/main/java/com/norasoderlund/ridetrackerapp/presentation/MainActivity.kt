@@ -7,18 +7,14 @@
 package com.norasoderlund.ridetrackerapp.presentation
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.location.Location
-import android.os.AsyncTask
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.collection.arrayMapOf
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -39,6 +35,7 @@ import androidx.health.services.client.data.Availability
 import androidx.health.services.client.data.DataType
 import androidx.health.services.client.data.DataTypeAvailability
 import androidx.health.services.client.data.ExerciseLapSummary
+import androidx.health.services.client.data.ExerciseState
 import androidx.health.services.client.data.ExerciseTrackedStatus.Companion.NO_EXERCISE_IN_PROGRESS
 import androidx.health.services.client.data.ExerciseTrackedStatus.Companion.OTHER_APP_IN_PROGRESS
 import androidx.health.services.client.data.ExerciseTrackedStatus.Companion.OWNED_EXERCISE_IN_PROGRESS
@@ -51,18 +48,19 @@ import androidx.wear.ambient.AmbientModeSupport.AmbientController
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import androidx.health.services.client.data.LocationAvailability
-import androidx.health.services.client.endExercise
 import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
-import androidx.room.RoomDatabase
+import androidx.wear.ambient.AmbientModeSupport.AmbientCallbackProvider
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.norasoderlund.ridetrackerapp.R
 import com.norasoderlund.ridetrackerapp.Recorder
-import com.norasoderlund.ridetrackerapp.RecorderElapsedSecondsEvent
-import com.norasoderlund.ridetrackerapp.RecorderStateEvent
+import com.norasoderlund.ridetrackerapp.RecorderCallbacks
+import com.norasoderlund.ridetrackerapp.RecorderDurationEvent
+import com.norasoderlund.ridetrackerapp.RecorderLocationEvent
+import com.norasoderlund.ridetrackerapp.RecorderStateInfoEvent
 import com.norasoderlund.ridetrackerapp.database.SessionDatabase
 import com.norasoderlund.ridetrackerapp.presentation.theme.RideTrackerTheme
-import kotlinx.coroutines.CoroutineScope
+import com.norasoderlund.ridetrackerapp.utils.getFormattedDuration
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
@@ -71,7 +69,7 @@ import org.greenrobot.eventbus.ThreadMode
 import java.util.Calendar
 
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallbacks {
     private var previousPage: Int = 1;
     private var isLoading: Boolean = true;
 
@@ -87,18 +85,22 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState);
 
         ambientController = AmbientModeSupport.attach(this);
+        ambientController.setAmbientOffloadEnabled(false);
         println("Is ambient enabled: " + ambientController.isAmbient);
 
         healthClient = HealthServices.getClient(this);
 
         database = Room.databaseBuilder(applicationContext, SessionDatabase::class.java, "sessions").allowMainThreadQueries().fallbackToDestructiveMigration().build();
 
+        recorder = Recorder(this, healthClient, database);
+
         val permissions = mapOf<String, Int>(
             Manifest.permission.ACCESS_FINE_LOCATION to ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION),
             Manifest.permission.ACCESS_COARSE_LOCATION to ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION),
             Manifest.permission.ACCESS_BACKGROUND_LOCATION to ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION),
             Manifest.permission.BODY_SENSORS to ActivityCompat.checkSelfPermission(this, Manifest.permission.BODY_SENSORS),
-            Manifest.permission.ACTIVITY_RECOGNITION to ActivityCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION)
+            Manifest.permission.ACTIVITY_RECOGNITION to ActivityCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION),
+            Manifest.permission.WAKE_LOCK to ActivityCompat.checkSelfPermission(this, Manifest.permission.WAKE_LOCK)
         );
 
 
@@ -115,15 +117,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart();
-
-        EventBus.getDefault().register(this);
     }
 
     override fun onStop() {
         super.onStop();
-
-        EventBus.getDefault().unregister(this);
     };
+
+    override fun getAmbientCallback(): AmbientModeSupport.AmbientCallback = MainActivityAmbientCallback();
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
@@ -138,7 +138,7 @@ class MainActivity : AppCompatActivity() {
             setContentView(R.layout.permissions);
         }
         else {
-            setPagesView();
+            setLocationView();
         }
     }
 
@@ -193,7 +193,7 @@ class MainActivity : AppCompatActivity() {
                 OTHER_APP_IN_PROGRESS -> {
                     println("other exercise in progress");
 
-                    setLocationView();
+                    setContentView(R.layout.permissions);
                 }
 
                 // This app has an existing workout.
@@ -201,8 +201,9 @@ class MainActivity : AppCompatActivity() {
                     println("owned exercise in progress");
 
                     recorder = Recorder(activity, healthClient, database);
+                    recorder.callbacks.add(activity);
 
-                    recorder.startExerciseUpdates(true);
+                    recorder.setExerciseCallback();
 
                     setPagesView();
 
@@ -213,22 +214,23 @@ class MainActivity : AppCompatActivity() {
                 NO_EXERCISE_IN_PROGRESS -> {
                     println("no exercise in progress");
 
-                    recorder = Recorder(activity, healthClient, database);
-
                     setContentView(R.layout.location);
 
-                    val warmUpConfig = WarmUpConfig(ExerciseType.BIKING, setOf(DataType.LOCATION));
+                    recorder = Recorder(activity, healthClient, database);
+                    recorder.callbacks.add(activity);
 
+                    val warmUpConfig = WarmUpConfig(ExerciseType.BIKING, setOf(DataType.LOCATION));
                     healthClient.exerciseClient.setUpdateCallback(excerciseUpdateCallback);
 
                     Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
 
                     healthClient.exerciseClient.prepareExerciseAsync(warmUpConfig).await();
 
+                    healthClient.exerciseClient.endExerciseAsync().await();
+
                     recorder.startExerciseUpdates();
 
                     isLoading = false;
-
                 }
             }
         }
@@ -348,34 +350,6 @@ class MainActivity : AppCompatActivity() {
         }*/
     };
 
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public fun onRecorderElapsedSecondsEvent(event: RecorderElapsedSecondsEvent) {
-        val pausedTextIndicator = findViewById<TextView>(R.id.pausedTextIndicator);
-
-        pausedTextIndicator?.text = event.formattedElapsedSeconds;
-    }
-
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public fun onRecorderStateEvent(event: RecorderStateEvent) {
-        val pausedTextIndicator = findViewById<TextView>(R.id.pausedTextIndicator)?: return;
-
-        if(event.started) {
-            if(event.paused) {
-                pausedTextIndicator.text = "Paused";
-                pausedTextIndicator.setTextColor(ContextCompat.getColor(this, R.color.red));
-            }
-            else {
-                pausedTextIndicator.text = recorder.getFormattedElapsedTime();
-                pausedTextIndicator.setTextColor(ContextCompat.getColor(this, R.color.blue));
-            }
-        }
-        else {
-            pausedTextIndicator.text = "Not recording";
-            pausedTextIndicator.setTextColor(ContextCompat.getColor(this, R.color.color));
-        }
-    }
-
-
     fun setPageIndicator(position: Int, enabled: Boolean) {
         var view: ImageView? = null;
 
@@ -397,212 +371,52 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    fun setRecordingButton(recording: Boolean) {
-        /*var recordingButton: ImageButton? = findViewById<ImageButton>(R.id.recordingButton) ?: return;
-
-        if(recording) {
-            recordingButton!!.setImageResource(R.drawable.baseline_stop_24);
-            recordingButton.background.setTint(ContextCompat.getColor(this, R.color.button));
-            recordingButton.setColorFilter(ContextCompat.getColor(this, R.color.color));
-
-            //findViewById<ImageButton>(R.id.trafficButton)?.visibility = View.INVISIBLE;
-            //findViewById<ImageButton>(R.id.ambientButton)?.visibility = View.INVISIBLE;
-        }
-        else {
-            recordingButton!!.setImageResource(R.drawable.baseline_play_arrow_24);
-            recordingButton.background.setTint(ContextCompat.getColor(this, R.color.brand));
-            recordingButton.setColorFilter(ContextCompat.getColor(this, R.color.color));
-
-            //findViewById<ImageButton>(R.id.trafficButton)?.visibility = View.VISIBLE;
-            //findViewById<ImageButton>(R.id.ambientButton)?.visibility = View.VISIBLE;
-        }*/
-    }
-}
-
-/*class MainActivityOld : FragmentActivity(), AmbientModeSupport.AmbientCallbackProvider {
-    var mapFragment: SupportMapFragment? = null;
-    var googleMap: GoogleMap? = null;
-    var googleMapLocationMarker: Marker? = null;
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        setContentView(R.layout.map);
-
-        val fineLocationPermissions = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION);
-        val coarseLocationPermissions = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION);
-
-        if (fineLocationPermissions != PackageManager.PERMISSION_GRANTED && coarseLocationPermissions != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 0);
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
-        }
-        else
-            createMap();
-
-        /*setContent {
-            WearApp("Android")
-        }*/
+    override fun onLocationUpdate(event: RecorderLocationEvent) {
     }
 
-    fun createMap() {
-        //val controller = AmbientModeSupport.attach(this);
+    override fun onDurationEvent(event: RecorderDurationEvent) {
+        if(!recorder.started || recorder.lastStateInfoEvent?.stateInfo?.state != ExerciseState.ACTIVE)
+            return;
 
-        // Retrieve the containers for the root of the layout and the map. Margins will need to be
-        // set on them to account for the system window insets.
-        val mapFrameLayout = findViewById<SwipeDismissFrameLayout>(R.id.mapContainer)
-        mapFrameLayout.addCallback(object : SwipeDismissFrameLayout.Callback() {
-            override fun onDismissed(layout: SwipeDismissFrameLayout) {
-                onBackPressedDispatcher.onBackPressed();
+        val pausedTextIndicator = findViewById<TextView>(R.id.pausedTextIndicator)?: return;
+
+        pausedTextIndicator.text = event.formattedDuration;
+        pausedTextIndicator.setTextColor(ContextCompat.getColor(this, R.color.green));
+    }
+
+    override fun onStateInfoEvent(event: RecorderStateInfoEvent) {
+        println("onStateInfoEvent");
+        val pausedTextIndicator = findViewById<TextView>(R.id.pausedTextIndicator)?: return;
+
+        println("view exists");
+
+        if(!recorder.started) {
+            pausedTextIndicator.text = "Not recording";
+            pausedTextIndicator.setTextColor(ContextCompat.getColor(this, R.color.color));
+
+            return;
+        }
+
+        when(event.stateInfo?.state) {
+            ExerciseState.AUTO_PAUSED -> {
+                pausedTextIndicator.text = "Auto-paused";
+                pausedTextIndicator.setTextColor(ContextCompat.getColor(this, R.color.blue));
             }
-        })
 
-        val controller = AmbientModeSupport.attach(this);
-        println("Is ambient enabled: " + controller.isAmbient);
-
-        // Obtain the MapFragment and set the async listener to be notified when the map is ready.
-        mapFragment = supportFragmentManager.findFragmentById(R.id.map) as SupportMapFragment;
-
-        if(mapFragment != null) {
-                (mapFragment as SupportMapFragment).getMapAsync(this::onMapReady);
-        }
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-
-        println("results: " + grantResults[0].toString() + "_" + grantResults[1].toString());
-
-        if(grantResults.any { it == PackageManager.PERMISSION_DENIED })
-            setContentView(R.layout.permissions);
-        else
-            createMap();
-    }
-
-    fun getScaledMarkerIcon(resource: Int, width: Int, height: Int): Bitmap {
-        val bitmap = BitmapFactory.decodeResource(this.resources, resource);
-
-        return Bitmap.createScaledBitmap(bitmap, width, height, false);
-    }
-
-    @SuppressLint("MissingPermission")
-    fun onMapReady(googleMap: GoogleMap) {
-        this.googleMap = googleMap;
-
-        try {
-            val success = googleMap.setMapStyle(MapStyleOptions.loadRawResourceStyle(this, R.raw.darkmap));
-
-            if(!success)
-                println("Failed to load map style.");
-        }
-        catch(error: Error) {
-            println("Failed to load map style because of an error.");
-        }
-
-        googleMap.isTrafficEnabled = true;
-
-        this.googleMapLocationMarker = googleMap.addMarker(
-            MarkerOptions()
-                .position(LatLng(0.0, 0.0))
-                .anchor(0.5f, 0.5f)
-                .icon(BitmapDescriptorFactory.fromBitmap(getScaledMarkerIcon(R.drawable.location, 32, 32)))
-        );
-
-        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
-
-        val lastLocation = fusedLocationClient.lastLocation;
-
-        lastLocation.addOnSuccessListener { location : Location? ->
-            if(location != null) {
-                val coordinate = LatLng(location.latitude, location.longitude);
-
-                this.googleMapLocationMarker!!.position = coordinate;
-                googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(coordinate, 14f));
+            ExerciseState.USER_PAUSED -> {
+                pausedTextIndicator.text = "Paused";
+                pausedTextIndicator.setTextColor(ContextCompat.getColor(this, R.color.red));
             }
-        };
-        
-        fusedLocationClient.requestLocationUpdates(LocationRequest.Builder(10 * 1000).build(),
-            locationCallback,
-            Looper.getMainLooper());
 
-
-        /*val sydney = LatLng(-33.85704, 151.21522);
-
-        googleMap.addMarker(
-            MarkerOptions().position(sydney)
-                .title("Sydney Opera House")
-        );
-
-        // Move the camera to show the marker.
-        googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(sydney, 18f));*/
-    }
-
-    private val locationCallback = object : LocationCallback() {
-        override fun onLocationResult(result: LocationResult) {
-            println("Location result received.");
-            
-            if(googleMap != null) {
-                if(result.lastLocation != null) {
-                    val coordinate = LatLng(result.lastLocation!!.latitude, result.lastLocation!!.longitude);
-
-                    if(googleMapLocationMarker != null)
-                        googleMapLocationMarker!!.position = coordinate;
-
-                    googleMap!!.animateCamera(CameraUpdateFactory.newLatLng(coordinate));
-                }
-
-                for (location in result.locations) {
-                    println(String.format("Location update received at latitude %f longitude %f", location.latitude, location.longitude));
-
-                    //moveToLocation(location)
+            ExerciseState.ACTIVE -> {
+                if(recorder.lastDurationEvent != null) {
+                    pausedTextIndicator.text = recorder.lastDurationEvent!!.formattedDuration;
+                    pausedTextIndicator.setTextColor(ContextCompat.getColor(this, R.color.green));
                 }
             }
         }
     }
-
-    override fun getAmbientCallback(): AmbientModeSupport.AmbientCallback {
-        return object : AmbientModeSupport.AmbientCallback() {
-            override fun onEnterAmbient(ambientDetails: Bundle) {
-                super.onEnterAmbient(ambientDetails)
-
-                mapFragment?.onEnterAmbient(ambientDetails);
-            }
-
-            override fun onExitAmbient() {
-                super.onExitAmbient()
-
-                mapFragment?.onExitAmbient()
-            }
-        }
-    }
-
-    fun getGreetingText() {
-        /*var greetingTextView = findViewById<TextView>(R.id.greetingTextView);
-
-        val rightNow = Calendar.getInstance();
-        val currentHour = rightNow.get(Calendar.HOUR_OF_DAY);
-
-        if(currentHour < 12)
-            greetingTextView.setText("Good morning");
-        else if(currentHour < 17)
-            greetingTextView.setText("Good afternoon");
-        else
-            greetingTextView.setText("Good evening");*/
-
-        //helloTextView.setText(String.format("Good evening\n%s!", "Nora"));
-    }
 }
-*/
-
 
 @Composable
 fun WearApp(greetingName: String) {

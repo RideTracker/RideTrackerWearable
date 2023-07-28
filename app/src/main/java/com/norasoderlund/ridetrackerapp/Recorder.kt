@@ -1,51 +1,32 @@
 package com.norasoderlund.ridetrackerapp
 
 import android.annotation.SuppressLint
-import android.content.Context
-import android.location.Location
-import android.location.LocationManager
 import android.os.Handler
 import android.os.Looper
 import android.widget.TextView
 import androidx.health.services.client.ExerciseUpdateCallback
-import androidx.health.services.client.HealthServices
 import androidx.health.services.client.HealthServicesClient
-import androidx.health.services.client.MeasureCallback
 import androidx.health.services.client.data.Availability
-import androidx.health.services.client.data.DataPointContainer
 import androidx.health.services.client.data.DataType
 import androidx.health.services.client.data.DataTypeAvailability
-import androidx.health.services.client.data.DeltaDataType
 import androidx.health.services.client.data.ExerciseConfig
 import androidx.health.services.client.data.ExerciseLapSummary
+import androidx.health.services.client.data.ExerciseState
 import androidx.health.services.client.data.ExerciseType
 import androidx.health.services.client.data.ExerciseUpdate
-import androidx.health.services.client.data.LocationAccuracy
 import androidx.health.services.client.data.LocationAvailability
+import androidx.health.services.client.pauseExercise
 import androidx.health.services.client.resumeExercise
-import androidx.health.services.client.startExercise
-import androidx.room.RoomDatabase
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.Granularity
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
+import androidx.lifecycle.lifecycleScope
 import com.norasoderlund.ridetrackerapp.dao.SessionDao
 import com.norasoderlund.ridetrackerapp.database.SessionDatabase
-import com.norasoderlund.ridetrackerapp.entities.Session
 import com.norasoderlund.ridetrackerapp.entities.SessionLocation
 import com.norasoderlund.ridetrackerapp.presentation.MainActivity
-import com.norasoderlund.ridetrackerapp.presentation.RecorderSession
-import com.norasoderlund.ridetrackerapp.presentation.RecorderSessionLocation
-import kotlinx.coroutines.guava.await
+import com.norasoderlund.ridetrackerapp.utils.getFormattedDuration
+import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import java.util.Calendar
-import java.util.Date
 import java.util.UUID
-import java.util.concurrent.TimeUnit
-import kotlin.math.floor
 
 class Recorder {
     private lateinit var activity: MainActivity;
@@ -56,27 +37,45 @@ class Recorder {
 
     private val sessionId: String = UUID.randomUUID().toString();
 
+    internal var lastActiveDuration: ExerciseUpdate.ActiveDurationCheckpoint? = null;
+    internal var lastState: ExerciseState? = null;
+
+    internal var callbacks: MutableList<RecorderCallbacks> = mutableListOf();
+
+    internal var lastLocationEvent: RecorderLocationEvent? = null;
+    internal var lastStateInfoEvent: RecorderStateInfoEvent? = null;
+    internal var lastDurationEvent: RecorderDurationEvent? = null;
+
+    internal var started: Boolean = false;
+
+    private var startedTimestamp: Long = 0L;
+    private var accumulatedDuration: Long = 0;
+
     @SuppressLint("MissingPermission")
     constructor(activity: MainActivity, healthClient: HealthServicesClient, database: SessionDatabase) {
         this.activity = activity;
         this.healthClient = healthClient;
 
-        this.database = database;
-        this.dao = database.getDao();
+        //this.database = database;
+        //this.dao = database.getDao();
 
-        dao.create(Session(sessionId));
+        //dao.create(Session(sessionId));
     }
 
-    internal fun startExerciseUpdates(resume: Boolean = false) {
+    internal fun startExerciseUpdates() {
         println("Recorder: startExerciseUpdates");
 
+        setExerciseCallback();
+
+        val exerciseConfig = ExerciseConfig(ExerciseType.BIKING, setOf(DataType.LOCATION), true, true);
+
+        healthClient.exerciseClient.startExerciseAsync(exerciseConfig);
+    }
+
+    internal fun setExerciseCallback() {
+        println("Recorder: setExerciseCallback");
+
         healthClient.exerciseClient.setUpdateCallback(excerciseUpdateCallback);
-
-        if(!resume) {
-            val exerciseConfig = ExerciseConfig(ExerciseType.BIKING, setOf(DataType.LOCATION, DataType.SPEED), true, true);
-
-            healthClient.exerciseClient.startExerciseAsync(exerciseConfig);
-        }
     }
 
     private val excerciseUpdateCallback = object : ExerciseUpdateCallback {
@@ -88,26 +87,86 @@ class Recorder {
             val latestMetrics = update.latestMetrics;
             val latestGoals = update.latestAchievedGoals;
 
-            val locationUpdates = latestMetrics.getData(DataType.LOCATION);
+            if(lastStateInfoEvent?.stateInfo?.state != exerciseStateInfo.state) {
+                if(started && startedTimestamp != 0L) {
+                    val calendar = Calendar.getInstance();
+                    val time = calendar.time.time;
 
-            if(locationUpdates.isNotEmpty()) {
-                val sessionLocations = locationUpdates.map { location ->
-                    println(String.format("New location: latitude %.4f longitude %.4f altitude %f", location.value.latitude, location.value.longitude, location.value.altitude));
+                    when(exerciseStateInfo.state) {
+                        ExerciseState.USER_PAUSED -> {
+                            println("Recording: user pausing");
 
-                    SessionLocation(sessionId, location.value.latitude, location.value.longitude, location.value.altitude, location.timeDurationFromBoot.toMillis())
-                };
+                            accumulatedDuration += time - startedTimestamp;
+                            startedTimestamp = 0;
+                        }
 
-                if(started && !paused) {
-                    sessionLocations.forEach { location ->
-                        dao.addLocation(location);
+                        ExerciseState.USER_RESUMING -> {
+                            println("Recording: user resuming");
+
+                            startedTimestamp = time;
+                        }
+
+                        ExerciseState.AUTO_PAUSED -> {
+                            println("Recording: auto pausing");
+
+                            accumulatedDuration += time - startedTimestamp;
+                            startedTimestamp = 0;
+                        }
+
+                        ExerciseState.AUTO_RESUMING -> {
+                            println("Recording: auto resuming");
+
+                            startedTimestamp = time;
+                        }
+
+                        ExerciseState.ENDED -> {
+                            println("Recording: ending");
+
+                            accumulatedDuration += time - startedTimestamp;
+                            startedTimestamp = 0;
+                        }
                     }
                 }
 
-                lastLocation = sessionLocations.last();
+                lastStateInfoEvent = RecorderStateInfoEvent(started, exerciseStateInfo);
 
-                EventBus.getDefault().post(RecorderLocationEvent(lastLocation!!));
+                callbacks.forEach { it.onStateInfoEvent(lastStateInfoEvent!!); }
+            }
+
+            val locationUpdates = latestMetrics.getData(DataType.LOCATION);
+
+            if(locationUpdates.isNotEmpty()) {
+                if(started) {
+                    activity.lifecycleScope.launch {
+                        val sessionLocations = locationUpdates.map { location ->
+                            println(String.format("New location: latitude %.4f longitude %.4f altitude %f", location.value.latitude, location.value.longitude, 0.0));
+
+                            //SessionLocation(sessionId, location.value.latitude, location.value.longitude, 0.0, location.timeDurationFromBoot.toMillis())
+                        };
+
+                        //sessionLocations.forEach { location ->
+                        //    dao.addLocation(location);
+                        //}
+                    }
+                }
+
+                //val lastLocation = locationUpdates.last();
+
+
+                val location = locationUpdates.last();
+
+                println("Last longitude " + location.value.latitude + " longitude " + location.value.longitude);
+
+                lastLocationEvent = RecorderLocationEvent(location.value.latitude, location.value.longitude);
+
+                callbacks.forEach { it.onLocationUpdate(lastLocationEvent!!); }
+
+                //lastLocation = SessionLocation(sessionId, location.value.latitude, location.value.longitude, 0.0, location.timeDurationFromBoot.toMillis());
+
+                //EventBus.getDefault().post(RecorderTestEvent(location.value.latitude, location.value.longitude));
             }
         }
+
 
         override fun onLapSummaryReceived(lapSummary: ExerciseLapSummary) {
             println("Recorder: onLapSummaryReceived");
@@ -143,68 +202,66 @@ class Recorder {
         }
     }
 
+    private val durationRunnable = object : Runnable {
+        override fun run() {
+            if(started && lastStateInfoEvent?.stateInfo?.state == ExerciseState.ACTIVE) {
+                val calendar = Calendar.getInstance();
+                var duration = accumulatedDuration;
+
+                if(startedTimestamp != 0L)
+                    duration += calendar.time.time - startedTimestamp;
+
+                lastDurationEvent = RecorderDurationEvent(duration, getFormattedDuration(duration));
+                callbacks.forEach { it -> it.onDurationEvent(lastDurationEvent!!) }
+            }
+
+            Handler(Looper.getMainLooper()).postDelayed(this, 1000);
+        }
+    }
+
     /*internal fun unregisterHealthClient() {
         healthClient.measureClient.unregisterMeasureCallbackAsync(DataType.Companion.HEART_RATE_BPM, heartRateCallback)
     }*/
 
-    private var handler: Handler = Handler(Looper.getMainLooper());
-
-    internal var started: Boolean = false;
-    internal var paused: Boolean = false;
-    internal var accumulatedElevation: Double = 0.0;
-    internal var accumulatedDistance: Double = 0.0;
-    internal var previousSessionMilliseconds: Long = 0;
-
     internal var lastLocation: SessionLocation? = null;
 
     internal fun toggle() {
-        if(!started || paused)
-            return start();
+        if(!started)
+            return resume();
 
-        stop();
+        if(lastStateInfoEvent?.stateInfo?.state == ExerciseState.USER_PAUSED)
+            return resume();
+
+        pause();
     }
 
     @SuppressLint("MissingPermission")
-    internal fun start() {
-        if(started && !paused)
+    internal fun resume() {
+        val calendar = Calendar.getInstance();
+        startedTimestamp = calendar.time.time;
+
+        if(!started) {
+            started = true;
+
+            lastStateInfoEvent = RecorderStateInfoEvent(started, lastStateInfoEvent?.stateInfo);
+            callbacks.forEach { it.onStateInfoEvent(lastStateInfoEvent!!); }
+
+            durationRunnable.run();
+
             return;
-
-        started = true;
-        paused = false;
-
-        EventBus.getDefault().post(RecorderStateEvent(started, paused));
-    }
-
-    internal fun stop() {
-        if(!started || paused)
-            return;
-
-        paused = true;
-
-        EventBus.getDefault().post(RecorderStateEvent(started, paused));
-    }
-
-    /*private var elapsedSecondsRunnable = object : Runnable {
-        override fun run() {
-            if(!paused) {
-                //elapsedSeconds++;
-
-                EventBus.getDefault().post(RecorderElapsedSecondsEvent(getElapsedMilliseconds() / 1000, getFormattedElapsedTime()));
-
-                handler.postDelayed(this, 1000);
-            }
         }
-    }*/
 
-    internal fun getFormattedElapsedTime(): String {
-        var secondsRemaining = (0 / 1000).toDouble();
+        activity.lifecycleScope.launch {
+            healthClient.exerciseClient.resumeExercise();
+        }
+    }
 
-        var hours = floor(secondsRemaining / (60 * 60));
-        secondsRemaining -= hours * 60 * 60;
+    internal fun pause() {
+        if(!started)
+            throw Error("Paused was called before the recorder was started.");
 
-        var minutes = floor(secondsRemaining / 60);
-        secondsRemaining -= minutes * 60;
-
-        return String.format("%d:%02d:%02d", hours.toInt(), minutes.toInt(), secondsRemaining.toInt());
+        activity.lifecycleScope.launch {
+            healthClient.exerciseClient.pauseExercise();
+        }
     }
 }

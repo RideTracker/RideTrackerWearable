@@ -1,64 +1,48 @@
 package com.norasoderlund.ridetrackerapp.presentation
 
 import android.annotation.SuppressLint
-import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.hardware.GeomagneticField
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
-import android.widget.TextView
-import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import androidx.wear.ambient.AmbientModeSupport
+import androidx.health.services.client.data.ExerciseState
 import androidx.wear.widget.SwipeDismissFrameLayout
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationResult
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
-import com.google.android.gms.maps.model.Polyline
-import com.google.android.gms.maps.model.PolylineOptions
 import com.norasoderlund.ridetrackerapp.R
+import com.norasoderlund.ridetrackerapp.RecorderCallbacks
+import com.norasoderlund.ridetrackerapp.RecorderDurationEvent
 import com.norasoderlund.ridetrackerapp.RecorderLocationEvent
-import com.norasoderlund.ridetrackerapp.RecorderStateEvent
-import org.greenrobot.eventbus.EventBus
+import com.norasoderlund.ridetrackerapp.RecorderStateInfoEvent
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
-import kotlin.math.max
-import kotlin.math.min
 
+class MapPageFragment : Fragment(), RecorderCallbacks {
+    private lateinit var activity: MainActivity;
 
-class MapPageFragment : Fragment() {
-    lateinit var activity: MainActivity;
-    var mapFragment: SupportMapFragment? = null;
-    var googleMap: GoogleMap? = null;
-    var googleMapLocationMarker: Marker? = null;
-    var currentPolyline: Polyline? = null;
+    private var map: GoogleMap? = null;
+    private var mapFragment: SupportMapFragment? = null;
 
-    var trafficEnabled: Boolean = false;
-    var ambientEnabled: Boolean = false;
+    private var locationMarker: Marker? = null;
+
+    private var trafficEnabled: Boolean = false;
+    private var ambientEnabled: Boolean = false;
 
     override fun onStart() {
         super.onStart();
 
-        EventBus.getDefault().register(this);
+        activity.recorder.callbacks.add(this);
     }
 
     override fun onResume() {
@@ -72,7 +56,7 @@ class MapPageFragment : Fragment() {
     override fun onStop() {
         super.onStop();
 
-        EventBus.getDefault().unregister(this);
+        activity.recorder.callbacks.remove(this);
     }
 
     override fun onCreateView(
@@ -126,14 +110,14 @@ class MapPageFragment : Fragment() {
     }
 
     @SuppressLint("MissingPermission")
-    fun onMapReady(googleMap: GoogleMap) {
+    fun onMapReady(map: GoogleMap) {
         val context = requireContext();
         val activity = requireActivity() as MainActivity;
 
-        this.googleMap = googleMap;
+        this.map = map;
 
         try {
-            val success = googleMap.setMapStyle(MapStyleOptions.loadRawResourceStyle(context, R.raw.darkmap));
+            val success = map.setMapStyle(MapStyleOptions.loadRawResourceStyle(context, R.raw.darkmap));
 
             if(!success)
                 println("Failed to load map style.");
@@ -142,55 +126,18 @@ class MapPageFragment : Fragment() {
             println("Failed to load map style because of an error.");
         }
 
-        googleMap.setMaxZoomPreference(16f);
-        googleMap.uiSettings.isMapToolbarEnabled = false;
-        googleMap.uiSettings.isScrollGesturesEnabled = false;
-        googleMap.uiSettings.isScrollGesturesEnabledDuringRotateOrZoom = false;
+        map.setMaxZoomPreference(16f);
+        map.uiSettings.isMapToolbarEnabled = false;
+        map.uiSettings.isScrollGesturesEnabled = false;
+        map.uiSettings.isScrollGesturesEnabledDuringRotateOrZoom = false;
 
-        googleMap.isTrafficEnabled = trafficEnabled;
+        map.isTrafficEnabled = trafficEnabled;
 
-        this.googleMapLocationMarker = googleMap.addMarker(
-            MarkerOptions()
-                .position(LatLng(0.0, 0.0))
-                .anchor(0.5f, 0.5f)
-                .icon(BitmapDescriptorFactory.fromBitmap(getScaledMarkerIcon(R.drawable.location, 32, 32)))
-        );
+        val startLocation = if(activity.recorder.lastLocation != null)  LatLng(activity.recorder.lastLocation!!.latitude, activity.recorder.lastLocation!!.longitude) else LatLng(0.0, 0.0);
 
-        val coordinate = LatLng(0.0, 0.0);
+        map.moveCamera(CameraUpdateFactory.newLatLngZoom(startLocation, 15f));
 
-        this.googleMapLocationMarker!!.position = coordinate;
-
-        googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(coordinate, 15f));
-
-        /*if(activity.lastLocation != null) {
-            val coordinate = LatLng(activity.lastLocation!!.latitude, activity.lastLocation!!.longitude);
-
-            this.googleMapLocationMarker!!.position = coordinate;
-            googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(coordinate, 15f));
-        }*/
-
-        /*val lastLocation = fusedLocationClient.lastLocation;
-
-        lastLocation.addOnSuccessListener { location : Location? ->
-            if(location != null) {
-                val coordinate = LatLng(location.latitude, location.longitude);
-
-                this.googleMapLocationMarker!!.position = coordinate;
-                googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(coordinate, 14f));
-            }
-        };*/
-
-
-
-        /*val sydney = LatLng(-33.85704, 151.21522);
-
-        googleMap.addMarker(
-            MarkerOptions().position(sydney)
-                .title("Sydney Opera House")
-        );
-
-        // Move the camera to show the marker.
-        googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(sydney, 18f));*/
+        this.locationMarker = map.addMarker(MarkerOptions().position(startLocation).anchor(0.5f, 0.5f).icon(BitmapDescriptorFactory.fromBitmap(getScaledMarkerIcon(R.drawable.location, 32, 32))));
     }
 
     fun getScaledMarkerIcon(resource: Int, width: Int, height: Int): Bitmap {
@@ -215,8 +162,7 @@ class MapPageFragment : Fragment() {
             trafficButton!!.setColorFilter(ContextCompat.getColor(context, R.color.color));
         }
 
-        if(googleMap != null)
-            googleMap!!.isTrafficEnabled = enabled;
+        map?.isTrafficEnabled = enabled;
     }
 
     fun setAmbientButton(enabled: Boolean) {
@@ -233,36 +179,6 @@ class MapPageFragment : Fragment() {
         else {
             //ambientButton!!.background.setTint(ContextCompat.getColor(context, R.color.yellow));
             ambientButton!!.setColorFilter(ContextCompat.getColor(context, R.color.color));
-        }
-    }
-
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public fun onRecorderStateEvent(event: RecorderStateEvent) {
-        val recordingButton = view?.findViewById<ImageButton>(R.id.recordingButton)?: return;
-        val pausedViewIndicator = view?.findViewById<View>(R.id.pausedViewIndicator);
-
-        val context = requireContext();
-
-        if(event.started && !event.paused) {
-            recordingButton.setImageResource(R.drawable.baseline_stop_24);
-            recordingButton.background.setTint(ContextCompat.getColor(context, R.color.button));
-            recordingButton.setColorFilter(ContextCompat.getColor(context, R.color.color));
-
-            pausedViewIndicator!!.visibility = View.INVISIBLE;
-
-            if(activity.recorder.lastLocation != null)
-                googleMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(activity.recorder.lastLocation!!.latitude, activity.recorder.lastLocation!!.longitude), 15f));
-        }
-        else {
-            recordingButton.setImageResource(R.drawable.baseline_play_arrow_24);
-            recordingButton.background.setTint(ContextCompat.getColor(context, R.color.brand));
-            recordingButton.setColorFilter(ContextCompat.getColor(context, R.color.color));
-
-            pausedViewIndicator!!.visibility = View.VISIBLE;
-
-            currentPolyline = null;
-
-            setMapCameraToBounds();
         }
     }
 
@@ -296,22 +212,41 @@ class MapPageFragment : Fragment() {
         googleMap?.moveCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), 100));*/
     }
 
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public fun onRecorderLocationEvent(event: RecorderLocationEvent) {
-        if(googleMap != null) {
-            val coordinate = LatLng(event.location.latitude, event.location.longitude);
 
-            if(currentPolyline == null)
-                currentPolyline = googleMap?.addPolyline(PolylineOptions().color(ContextCompat.getColor(requireContext(), R.color.brand)));
+    override fun onLocationUpdate(event: RecorderLocationEvent) {
+        if(map != null) {
+            val coordinate = LatLng(event.latitude, event.longitude);
 
-            var points = currentPolyline!!.points;
-            points.add(coordinate);
-            currentPolyline!!.points = points;
+            println("Received location on map page");
 
-            googleMap!!.animateCamera(CameraUpdateFactory.newLatLng(coordinate));
+            map!!.moveCamera(CameraUpdateFactory.newLatLng(coordinate));
 
-            if (googleMapLocationMarker != null)
-                googleMapLocationMarker!!.position = coordinate;
+            locationMarker?.position = coordinate;
         }
+    }
+
+    override fun onStateInfoEvent(event: RecorderStateInfoEvent) {
+        val recordingButton = view?.findViewById<ImageButton>(R.id.recordingButton)?: return;
+        val pausedViewIndicator = view?.findViewById<View>(R.id.pausedViewIndicator);
+
+        val context = requireContext();
+
+        if(event.started && event.stateInfo?.state != ExerciseState.USER_PAUSED) {
+            recordingButton.setImageResource(R.drawable.baseline_stop_24);
+            recordingButton.background.setTint(ContextCompat.getColor(context, R.color.button));
+            recordingButton.setColorFilter(ContextCompat.getColor(context, R.color.color));
+
+            pausedViewIndicator!!.visibility = View.INVISIBLE;
+        }
+        else {
+            recordingButton.setImageResource(R.drawable.baseline_play_arrow_24);
+            recordingButton.background.setTint(ContextCompat.getColor(context, R.color.brand));
+            recordingButton.setColorFilter(ContextCompat.getColor(context, R.color.color));
+
+            pausedViewIndicator!!.visibility = View.VISIBLE;
+        }
+    }
+
+    override fun onDurationEvent(event: RecorderDurationEvent) {
     }
 }

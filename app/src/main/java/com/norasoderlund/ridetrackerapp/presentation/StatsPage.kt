@@ -7,21 +7,15 @@ import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.core.animation.doOnEnd
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import androidx.health.services.client.data.ExerciseState
 import com.norasoderlund.ridetrackerapp.R
-import com.norasoderlund.ridetrackerapp.RecorderLocationEvent
-import com.norasoderlund.ridetrackerapp.RecorderStateEvent
 import org.greenrobot.eventbus.EventBus
-import org.greenrobot.eventbus.Subscribe
-import org.greenrobot.eventbus.ThreadMode
-import kotlin.math.roundToInt
 
 class StatsPageFragment : Fragment() {
     private lateinit var speedValue: TextView;
@@ -47,14 +41,10 @@ class StatsPageFragment : Fragment() {
         super.onStart();
 
         activity = requireActivity() as MainActivity;
-
-        EventBus.getDefault().register(this);
     }
 
     override fun onStop() {
         super.onStop();
-
-        EventBus.getDefault().unregister(this);
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -177,7 +167,7 @@ class StatsPageFragment : Fragment() {
         val context = requireContext();
 
 
-        if(activity.recorder.started && !activity.recorder.paused) {
+        if(activity.recorder.started && activity.recorder.lastStateInfoEvent?.stateInfo?.state != ExerciseState.USER_PAUSED) {
             recordingButtonImage.setImageResource(R.drawable.baseline_stop_24);
             recordingButtonImage.setColorFilter(ContextCompat.getColor(context, R.color.color));
             recordingButton.background.setTint(ContextCompat.getColor(context, R.color.button));
@@ -192,7 +182,7 @@ class StatsPageFragment : Fragment() {
             recordingButtonText.text = if(activity.recorder.started) "Resume" else "Start";
         }
 
-        setPageState(activity.recorder.started, activity.recorder.paused, animate);
+        setPageState(activity.recorder.started, activity.recorder.lastStateInfoEvent?.stateInfo?.state == ExerciseState.USER_PAUSED, animate);
     }
 
     private fun setPageState(started: Boolean, paused: Boolean, animate: Boolean) {
@@ -234,19 +224,5 @@ class StatsPageFragment : Fragment() {
                 }
             }
         }
-    }
-
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public fun onRecorderStateEvent(event: RecorderStateEvent) {
-        updateRecordingButtonState(true);
-    }
-
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public fun onRecorderLocationEvent(event: RecorderLocationEvent) {
-        println("Stats page received");
-
-        //speedValue.text = String.format("%.1f", lastLocation.speed * 3.6f);
-        //elevationValue.text = activity.recorder.accumulatedElevation.roundToInt().toString();
-        //distanceValue.text = (((activity.recorder.accumulatedDistance / 1000) * 10.0).roundToInt() / 10.0).toString();
     }
 }
