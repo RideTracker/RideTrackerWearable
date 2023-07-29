@@ -43,6 +43,7 @@ class Recorder {
     internal var callbacks: MutableList<RecorderCallbacks> = mutableListOf();
 
     internal var lastLocationEvent: RecorderLocationEvent? = null;
+    internal var lastSpeedEvent: RecorderSpeedEvent? = null;
     internal var lastStateInfoEvent: RecorderStateInfoEvent? = null;
     internal var lastDurationEvent: RecorderDurationEvent? = null;
 
@@ -67,8 +68,7 @@ class Recorder {
 
         setExerciseCallback();
 
-        val exerciseConfig = ExerciseConfig(ExerciseType.BIKING, setOf(DataType.LOCATION), true, true);
-
+        val exerciseConfig = ExerciseConfig(ExerciseType.BIKING, setOf(DataType.LOCATION, DataType.SPEED), false, true);
         healthClient.exerciseClient.startExerciseAsync(exerciseConfig);
     }
 
@@ -150,20 +150,23 @@ class Recorder {
                     }
                 }
 
-                //val lastLocation = locationUpdates.last();
-
-
                 val location = locationUpdates.last();
 
                 println("Last longitude " + location.value.latitude + " longitude " + location.value.longitude);
 
                 lastLocationEvent = RecorderLocationEvent(location.value.latitude, location.value.longitude);
-
                 callbacks.forEach { it.onLocationUpdate(lastLocationEvent!!); }
+            }
 
-                //lastLocation = SessionLocation(sessionId, location.value.latitude, location.value.longitude, 0.0, location.timeDurationFromBoot.toMillis());
+            val speedUpdates = latestMetrics.getData(DataType.SPEED);
 
-                //EventBus.getDefault().post(RecorderTestEvent(location.value.latitude, location.value.longitude));
+            if(speedUpdates.isNotEmpty()) {
+                val speed = speedUpdates.last();
+
+                println("Current speed " + speed.value + " m/s");
+
+                lastSpeedEvent = RecorderSpeedEvent(speed.value);
+                callbacks.forEach { it.onSpeedEvent(lastSpeedEvent!!); }
             }
         }
 

@@ -15,9 +15,15 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.health.services.client.data.ExerciseState
 import com.norasoderlund.ridetrackerapp.R
+import com.norasoderlund.ridetrackerapp.RecorderCallbacks
+import com.norasoderlund.ridetrackerapp.RecorderDurationEvent
+import com.norasoderlund.ridetrackerapp.RecorderLocationEvent
+import com.norasoderlund.ridetrackerapp.RecorderSpeedEvent
+import com.norasoderlund.ridetrackerapp.RecorderStateInfoEvent
 import org.greenrobot.eventbus.EventBus
+import kotlin.math.round
 
-class StatsPageFragment : Fragment() {
+class StatsPageFragment : Fragment(), RecorderCallbacks {
     private lateinit var speedValue: TextView;
     private lateinit var elevationValue: TextView;
     private lateinit var distanceValue: TextView;
@@ -41,10 +47,14 @@ class StatsPageFragment : Fragment() {
         super.onStart();
 
         activity = requireActivity() as MainActivity;
+
+        activity.recorder.callbacks.add(this);
     }
 
     override fun onStop() {
         super.onStop();
+
+        activity.recorder.callbacks.remove(this);
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -166,20 +176,26 @@ class StatsPageFragment : Fragment() {
 
         val context = requireContext();
 
+        if(!activity.recorder.started) {
+            recordingButtonImage.setImageResource(R.drawable.baseline_play_arrow_24);
+            recordingButtonImage.setColorFilter(ContextCompat.getColor(context, R.color.color));
+            recordingButton.background.setTint(ContextCompat.getColor(context, R.color.brand));
 
-        if(activity.recorder.started && activity.recorder.lastStateInfoEvent?.stateInfo?.state != ExerciseState.USER_PAUSED) {
+            recordingButtonText.text = "Start";
+        }
+        else if(activity.recorder.lastStateInfoEvent?.stateInfo?.state == ExerciseState.USER_PAUSED) {
+            recordingButtonImage.setImageResource(R.drawable.baseline_play_arrow_24);
+            recordingButtonImage.setColorFilter(ContextCompat.getColor(context, R.color.color));
+            recordingButton.background.setTint(ContextCompat.getColor(context, R.color.brand));
+
+            recordingButtonText.text = "Resume";
+        }
+        else {
             recordingButtonImage.setImageResource(R.drawable.baseline_stop_24);
             recordingButtonImage.setColorFilter(ContextCompat.getColor(context, R.color.color));
             recordingButton.background.setTint(ContextCompat.getColor(context, R.color.button));
 
             recordingButtonText.text = "Pause";
-        }
-        else {
-            recordingButtonImage.setImageResource(R.drawable.baseline_play_arrow_24);
-            recordingButtonImage.setColorFilter(ContextCompat.getColor(context, R.color.color));
-            recordingButton.background.setTint(ContextCompat.getColor(context, R.color.brand));
-
-            recordingButtonText.text = if(activity.recorder.started) "Resume" else "Start";
         }
 
         setPageState(activity.recorder.started, activity.recorder.lastStateInfoEvent?.stateInfo?.state == ExerciseState.USER_PAUSED, animate);
@@ -190,12 +206,11 @@ class StatsPageFragment : Fragment() {
         val buttonSliderValues = mutableListOf<Float>(0f, getDpPixels(24f + 15f));
         val finishButtonValues = mutableListOf<Float>(1f, 0f);
 
-        if(!started || paused) {
+        if(paused) {
             sliderLayoutValues.reverse();
             buttonSliderValues.reverse();
             finishButtonValues.reverse();
         }
-
 
         if(!animate) {
             sliderLayout?.translationY = sliderLayoutValues[1];
@@ -224,5 +239,19 @@ class StatsPageFragment : Fragment() {
                 }
             }
         }
+    }
+
+    override fun onLocationUpdate(event: RecorderLocationEvent) {
+    }
+
+    override fun onStateInfoEvent(event: RecorderStateInfoEvent) {
+        updateRecordingButtonState(true);
+    }
+
+    override fun onSpeedEvent(event: RecorderSpeedEvent) {
+        speedValue.text = (round((event.metersPerSecond * 3.6) * 10.0) / 10.0).toString();
+    }
+
+    override fun onDurationEvent(event: RecorderDurationEvent) {
     }
 }

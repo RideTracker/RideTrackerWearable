@@ -43,6 +43,7 @@
                 android:textColor="@color/color"
                 android:textFontWeight="500"
                 android:textSize="18sp"
+                android:textAllCaps="true"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintTop_toBottomOf="@+id/clockTextView" />
 

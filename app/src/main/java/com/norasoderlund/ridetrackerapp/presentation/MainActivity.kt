@@ -7,8 +7,10 @@
 package com.norasoderlund.ridetrackerapp.presentation
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.location.Location
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -51,12 +53,16 @@ import androidx.health.services.client.data.LocationAvailability
 import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
 import androidx.wear.ambient.AmbientModeSupport.AmbientCallbackProvider
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.maps.model.LatLng
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.norasoderlund.ridetrackerapp.R
 import com.norasoderlund.ridetrackerapp.Recorder
 import com.norasoderlund.ridetrackerapp.RecorderCallbacks
 import com.norasoderlund.ridetrackerapp.RecorderDurationEvent
 import com.norasoderlund.ridetrackerapp.RecorderLocationEvent
+import com.norasoderlund.ridetrackerapp.RecorderSpeedEvent
 import com.norasoderlund.ridetrackerapp.RecorderStateInfoEvent
 import com.norasoderlund.ridetrackerapp.database.SessionDatabase
 import com.norasoderlund.ridetrackerapp.presentation.theme.RideTrackerTheme
@@ -78,6 +84,8 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
     private lateinit var ambientController: AmbientController;
     private lateinit var healthClient: HealthServicesClient;
     private lateinit var database: SessionDatabase;
+
+    internal var initialLocation: LatLng = LatLng(0.0, 0.0);
 
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.AppTheme_NoActionBar);
@@ -182,6 +190,7 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
         }
     }
 
+    @SuppressLint("MissingPermission")
     private fun setLocationView() {
         lifecycleScope.launch {
             val activity: MainActivity = this@MainActivity;
@@ -200,14 +209,25 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
                 OWNED_EXERCISE_IN_PROGRESS -> {
                     println("owned exercise in progress");
 
+                    setContentView(R.layout.location);
+                    Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
+
                     recorder = Recorder(activity, healthClient, database);
                     recorder.callbacks.add(activity);
 
                     recorder.setExerciseCallback();
 
-                    setPagesView();
+                    val fusedLocationClient = LocationServices.getFusedLocationProviderClient(activity);
 
-                    isLoading = false;
+                    fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                        .addOnSuccessListener {
+                                location: Location -> initialLocation = LatLng(location.latitude, location.longitude);
+                        }
+                        .addOnCompleteListener {
+                            recorder.startExerciseUpdates();
+
+                            isLoading = false;
+                        };
                 }
 
                 // Start a fresh workout.
@@ -215,70 +235,34 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
                     println("no exercise in progress");
 
                     setContentView(R.layout.location);
+                    Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
 
                     recorder = Recorder(activity, healthClient, database);
                     recorder.callbacks.add(activity);
 
-                    val warmUpConfig = WarmUpConfig(ExerciseType.BIKING, setOf(DataType.LOCATION));
-                    healthClient.exerciseClient.setUpdateCallback(excerciseUpdateCallback);
+                    //val warmUpConfig = WarmUpConfig(ExerciseType.BIKING, setOf(DataType.LOCATION));
+                    //healthClient.exerciseClient.setUpdateCallback(excerciseUpdateCallback);
 
-                    Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
 
-                    healthClient.exerciseClient.prepareExerciseAsync(warmUpConfig).await();
+                    //healthClient.exerciseClient.prepareExerciseAsync(warmUpConfig).await();
 
-                    healthClient.exerciseClient.endExerciseAsync().await();
+                    //healthClient.exerciseClient.endExerciseAsync().await();
 
-                    recorder.startExerciseUpdates();
+                    val fusedLocationClient = LocationServices.getFusedLocationProviderClient(activity);
 
-                    isLoading = false;
-                }
-            }
-        }
-
-                //lastLocation = location;
-
-                //isLoading = false;
-    }
-
-    private val excerciseUpdateCallback = object : ExerciseUpdateCallback {
-        override fun onExerciseUpdateReceived(update: ExerciseUpdate) {
-            println("onExerciseUpdateReceived");
-        }
-
-        override fun onLapSummaryReceived(lapSummary: ExerciseLapSummary) {
-            println("onLapSummaryReceived");
-        }
-
-        override fun onRegistered() {
-            println("onRegistered");
-        }
-
-        override fun onRegistrationFailed(throwable: Throwable) {
-            println("onRegistrationFailed");
-        }
-
-        override fun onAvailabilityChanged(
-            dataType: DataType<*, *>,
-            availability: Availability
-        ) {
-            println("onAvailabilityChanged");
-            // Called when the availability of a particular DataType changes.
-            when {
-                // Relates to another DataType.
-                availability is DataTypeAvailability -> {
-                    println("DataTypeAvailability");
-                    if(isLoading) {
-                        when(availability) {
-                            LocationAvailability.ACQUIRED_TETHERED, LocationAvailability.ACQUIRED_UNTETHERED -> {
-                                isLoading = false;
-                            }
+                    fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                        .addOnSuccessListener {
+                            location: Location -> initialLocation = LatLng(location.latitude, location.longitude);
                         }
-                    }
+                        .addOnCompleteListener {
+                            recorder.startExerciseUpdates();
+
+                            isLoading = false;
+                        };
                 }
             }
         }
     }
-
 
     var clockRunnable = object : Runnable {
         override fun run() {
@@ -384,13 +368,16 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
         pausedTextIndicator.setTextColor(ContextCompat.getColor(this, R.color.green));
     }
 
+    override fun onSpeedEvent(event: RecorderSpeedEvent) {
+    }
+
     override fun onStateInfoEvent(event: RecorderStateInfoEvent) {
         println("onStateInfoEvent");
         val pausedTextIndicator = findViewById<TextView>(R.id.pausedTextIndicator)?: return;
 
         println("view exists");
 
-        if(!recorder.started) {
+        if(!event.started) {
             pausedTextIndicator.text = "Not recording";
             pausedTextIndicator.setTextColor(ContextCompat.getColor(this, R.color.color));
 
@@ -413,6 +400,11 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
                     pausedTextIndicator.text = recorder.lastDurationEvent!!.formattedDuration;
                     pausedTextIndicator.setTextColor(ContextCompat.getColor(this, R.color.green));
                 }
+            }
+
+            null -> {
+                pausedTextIndicator.text = "Starting";
+                pausedTextIndicator.setTextColor(ContextCompat.getColor(this, R.color.blue));
             }
         }
     }

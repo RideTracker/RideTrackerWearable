@@ -24,6 +24,7 @@ import com.norasoderlund.ridetrackerapp.R
 import com.norasoderlund.ridetrackerapp.RecorderCallbacks
 import com.norasoderlund.ridetrackerapp.RecorderDurationEvent
 import com.norasoderlund.ridetrackerapp.RecorderLocationEvent
+import com.norasoderlund.ridetrackerapp.RecorderSpeedEvent
 import com.norasoderlund.ridetrackerapp.RecorderStateInfoEvent
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -102,11 +103,11 @@ class MapPageFragment : Fragment(), RecorderCallbacks {
         view.findViewById<ImageButton>(R.id.ambientButton)?.setOnClickListener { setAmbientButton(!ambientEnabled); }
 
         // Obtain the MapFragment and set the async listener to be notified when the map is ready.
-        mapFragment = childFragmentManager.findFragmentById(R.id.map) as SupportMapFragment?;
+        //mapFragment = childFragmentManager.findFragmentById(R.id.map) as SupportMapFragment?;
 
-        if(mapFragment != null) {
-            (mapFragment as SupportMapFragment).getMapAsync(this::onMapReady);
-        }
+        //if(mapFragment != null) {
+            //(mapFragment as SupportMapFragment).getMapAsync(this::onMapReady);
+        //}
     }
 
     @SuppressLint("MissingPermission")
@@ -133,11 +134,9 @@ class MapPageFragment : Fragment(), RecorderCallbacks {
 
         map.isTrafficEnabled = trafficEnabled;
 
-        val startLocation = if(activity.recorder.lastLocation != null)  LatLng(activity.recorder.lastLocation!!.latitude, activity.recorder.lastLocation!!.longitude) else LatLng(0.0, 0.0);
+        map.moveCamera(CameraUpdateFactory.newLatLngZoom(activity.initialLocation, 15f));
 
-        map.moveCamera(CameraUpdateFactory.newLatLngZoom(startLocation, 15f));
-
-        this.locationMarker = map.addMarker(MarkerOptions().position(startLocation).anchor(0.5f, 0.5f).icon(BitmapDescriptorFactory.fromBitmap(getScaledMarkerIcon(R.drawable.location, 32, 32))));
+        this.locationMarker = map.addMarker(MarkerOptions().position(activity.initialLocation).anchor(0.5f, 0.5f).icon(BitmapDescriptorFactory.fromBitmap(getScaledMarkerIcon(R.drawable.location, 32, 32))));
     }
 
     fun getScaledMarkerIcon(resource: Int, width: Int, height: Int): Bitmap {
@@ -245,6 +244,9 @@ class MapPageFragment : Fragment(), RecorderCallbacks {
 
             pausedViewIndicator!!.visibility = View.VISIBLE;
         }
+    }
+
+    override fun onSpeedEvent(event: RecorderSpeedEvent) {
     }
 
     override fun onDurationEvent(event: RecorderDurationEvent) {

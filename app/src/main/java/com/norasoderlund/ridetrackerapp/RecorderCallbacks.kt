@@ -4,4 +4,5 @@ interface RecorderCallbacks {
     fun onLocationUpdate(event: RecorderLocationEvent)
     fun onStateInfoEvent(event: RecorderStateInfoEvent)
     fun onDurationEvent(event: RecorderDurationEvent)
+    fun onSpeedEvent(event: RecorderSpeedEvent)
 }
