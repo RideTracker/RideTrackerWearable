@@ -15,6 +15,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
@@ -60,8 +61,11 @@ import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.norasoderlund.ridetrackerapp.R
 import com.norasoderlund.ridetrackerapp.Recorder
 import com.norasoderlund.ridetrackerapp.RecorderCallbacks
+import com.norasoderlund.ridetrackerapp.RecorderDistanceEvent
 import com.norasoderlund.ridetrackerapp.RecorderDurationEvent
+import com.norasoderlund.ridetrackerapp.RecorderElevationEvent
 import com.norasoderlund.ridetrackerapp.RecorderLocationEvent
+import com.norasoderlund.ridetrackerapp.RecorderSessionEndEvent
 import com.norasoderlund.ridetrackerapp.RecorderSpeedEvent
 import com.norasoderlund.ridetrackerapp.RecorderStateInfoEvent
 import com.norasoderlund.ridetrackerapp.database.SessionDatabase
@@ -83,7 +87,6 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
 
     private lateinit var ambientController: AmbientController;
     private lateinit var healthClient: HealthServicesClient;
-    private lateinit var database: SessionDatabase;
 
     internal var initialLocation: LatLng = LatLng(0.0, 0.0);
 
@@ -98,9 +101,7 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
 
         healthClient = HealthServices.getClient(this);
 
-        database = Room.databaseBuilder(applicationContext, SessionDatabase::class.java, "sessions").allowMainThreadQueries().fallbackToDestructiveMigration().build();
-
-        recorder = Recorder(this, healthClient, database);
+        recorder = Recorder(this, healthClient);
 
         val permissions = mapOf<String, Int>(
             Manifest.permission.ACCESS_FINE_LOCATION to ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION),
@@ -212,8 +213,8 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
                     setContentView(R.layout.location);
                     Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
 
-                    recorder = Recorder(activity, healthClient, database);
-                    recorder.callbacks.add(activity);
+                    recorder = Recorder(activity, healthClient);
+                    recorder.addCallback(activity);
 
                     recorder.setExerciseCallback();
 
@@ -224,7 +225,12 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
                                 location: Location -> initialLocation = LatLng(location.latitude, location.longitude);
                         }
                         .addOnCompleteListener {
+                            recorder.startDatabase();
+
                             recorder.startExerciseUpdates();
+
+                            // Experimental... should in theory "start" the recorder without starting a new session
+                            recorder.resume();
 
                             isLoading = false;
                         };
@@ -237,8 +243,6 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
                     setContentView(R.layout.location);
                     Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
 
-                    recorder = Recorder(activity, healthClient, database);
-                    recorder.callbacks.add(activity);
 
                     //val warmUpConfig = WarmUpConfig(ExerciseType.BIKING, setOf(DataType.LOCATION));
                     //healthClient.exerciseClient.setUpdateCallback(excerciseUpdateCallback);
@@ -255,6 +259,14 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
                             location: Location -> initialLocation = LatLng(location.latitude, location.longitude);
                         }
                         .addOnCompleteListener {
+                            recorder = Recorder(activity, healthClient);
+
+                            recorder.startDatabase();
+                            recorder.clearDatabase();
+
+                            recorder.addCallback(activity);
+
+                            //recorder.setExerciseCallback();
                             recorder.startExerciseUpdates();
 
                             isLoading = false;
@@ -355,6 +367,46 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
         }
     }
 
+    fun setFinishView() {
+        setContentView(R.layout.finish_page);
+
+        val descriptionTextView = findViewById<TextView>(R.id.descriptionTextView);
+
+        if(descriptionTextView != null) {
+            if(recorder.lastDistanceEvent != null && recorder.lastSpeedStatsEvent != null)
+                descriptionTextView.text = "You reached " + recorder.lastDistanceEvent!!.formattedDistance.text + " " + recorder.lastDistanceEvent!!.formattedDistance.unit + " with an average speed of " + recorder.lastSpeedStatsEvent!!.average.toInt().toString() + " km/h!";
+            else
+                descriptionTextView.text = "We couldn't get the latest stats."
+        }
+
+        findViewById<LinearLayout>(R.id.finishButton)?.setOnClickListener {
+            setUploadingView();
+        }
+
+        findViewById<LinearLayout>(R.id.discardButton)?.setOnClickListener {
+            setDiscardView();
+        }
+    }
+
+    fun setDiscardView() {
+        setContentView(R.layout.discard_page);
+
+        findViewById<LinearLayout>(R.id.deleteButton)?.setOnClickListener {
+            setLocationView();
+        }
+
+        findViewById<LinearLayout>(R.id.cancelButton)?.setOnClickListener {
+            setFinishView();
+        }
+    }
+
+    fun setUploadingView() {
+        setContentView(R.layout.uploading_page);
+
+        isLoading = true;
+        Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
+    }
+
     override fun onLocationUpdate(event: RecorderLocationEvent) {
     }
 
@@ -369,6 +421,16 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
     }
 
     override fun onSpeedEvent(event: RecorderSpeedEvent) {
+    }
+
+    override fun onDistanceEvent(event: RecorderDistanceEvent) {
+
+    }
+
+    override fun onElevationEvent(event: RecorderElevationEvent) {
+    }
+
+    override fun onSessionEndEvent(event: RecorderSessionEndEvent) {
     }
 
     override fun onStateInfoEvent(event: RecorderStateInfoEvent) {

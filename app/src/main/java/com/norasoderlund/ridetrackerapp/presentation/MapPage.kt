@@ -3,11 +3,13 @@ package com.norasoderlund.ridetrackerapp.presentation
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.health.services.client.data.ExerciseState
@@ -17,17 +19,26 @@ import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
+import com.google.android.gms.maps.model.Polyline
+import com.google.android.gms.maps.model.PolylineOptions
 import com.norasoderlund.ridetrackerapp.R
 import com.norasoderlund.ridetrackerapp.RecorderCallbacks
+import com.norasoderlund.ridetrackerapp.RecorderDistanceEvent
 import com.norasoderlund.ridetrackerapp.RecorderDurationEvent
+import com.norasoderlund.ridetrackerapp.RecorderElevationEvent
 import com.norasoderlund.ridetrackerapp.RecorderLocationEvent
+import com.norasoderlund.ridetrackerapp.RecorderSessionEndEvent
 import com.norasoderlund.ridetrackerapp.RecorderSpeedEvent
 import com.norasoderlund.ridetrackerapp.RecorderStateInfoEvent
+import com.norasoderlund.ridetrackerapp.entities.Session
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import kotlin.math.max
+import kotlin.math.min
 
 class MapPageFragment : Fragment(), RecorderCallbacks {
     private lateinit var activity: MainActivity;
@@ -40,10 +51,14 @@ class MapPageFragment : Fragment(), RecorderCallbacks {
     private var trafficEnabled: Boolean = false;
     private var ambientEnabled: Boolean = false;
 
+    private val sessionPolylines: MutableMap<String, Polyline> = mutableMapOf();
+
+    private var cameraOverview: Boolean = false;
+
     override fun onStart() {
         super.onStart();
 
-        activity.recorder.callbacks.add(this);
+        activity.recorder.addCallback(this);
     }
 
     override fun onResume() {
@@ -57,7 +72,7 @@ class MapPageFragment : Fragment(), RecorderCallbacks {
     override fun onStop() {
         super.onStop();
 
-        activity.recorder.callbacks.remove(this);
+        activity.recorder.removeCallback(this);
     }
 
     override fun onCreateView(
@@ -103,11 +118,11 @@ class MapPageFragment : Fragment(), RecorderCallbacks {
         view.findViewById<ImageButton>(R.id.ambientButton)?.setOnClickListener { setAmbientButton(!ambientEnabled); }
 
         // Obtain the MapFragment and set the async listener to be notified when the map is ready.
-        //mapFragment = childFragmentManager.findFragmentById(R.id.map) as SupportMapFragment?;
+        mapFragment = childFragmentManager.findFragmentById(R.id.map) as SupportMapFragment?;
 
-        //if(mapFragment != null) {
-            //(mapFragment as SupportMapFragment).getMapAsync(this::onMapReady);
-        //}
+        if(mapFragment != null) {
+            (mapFragment as SupportMapFragment).getMapAsync(this::onMapReady);
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -136,7 +151,28 @@ class MapPageFragment : Fragment(), RecorderCallbacks {
 
         map.moveCamera(CameraUpdateFactory.newLatLngZoom(activity.initialLocation, 15f));
 
-        this.locationMarker = map.addMarker(MarkerOptions().position(activity.initialLocation).anchor(0.5f, 0.5f).icon(BitmapDescriptorFactory.fromBitmap(getScaledMarkerIcon(R.drawable.location, 32, 32))));
+        this.locationMarker = createMarker(activity.initialLocation, R.drawable.location, 1000f);
+
+        sessionPolylines.clear();
+
+        if(activity.recorder.started) {
+            var sessionLocations = activity.recorder.restoreSessionLocations();
+
+            sessionLocations.forEach { (session, locations) ->
+                createPolyline(session.id);
+
+                if(locations.isNotEmpty()) {
+                    val points = sessionPolylines[session.id]!!.points;
+                    locations.forEach { location -> points.add(LatLng(location.latitude, location.longitude)) }
+                    sessionPolylines[session.id]!!.points = points;
+
+                    createMarker(sessionPolylines[session.id]!!.points.first(), if(session.index == 0) R.drawable.start else R.drawable.intermediate);
+
+                    if(session.id != activity.recorder.currentSession?.id)
+                        createMarker(sessionPolylines[session.id]!!.points.last(), R.drawable.intermediate);
+                }
+            }
+        }
     }
 
     fun getScaledMarkerIcon(resource: Int, width: Int, height: Int): Bitmap {
@@ -182,25 +218,25 @@ class MapPageFragment : Fragment(), RecorderCallbacks {
     }
 
     private fun setMapCameraToBounds() {
-        /*var minLat: Double? = null;
+        var minLat: Double? = null;
         var maxLat: Double? = null;
 
         var minLng: Double? = null;
         var maxLng: Double? = null;
 
-        activity.recorder.sessions.flatMap { session -> session.locations }!!.forEach {location ->
+        sessionPolylines.flatMap { (session, polyline) -> polyline.points }!!.forEach { point ->
             if (minLat == null) {
-                minLat = location.coords.latitude
-                maxLat = location.coords.latitude
+                minLat = point.latitude
+                maxLat = point.latitude
 
-                minLng = location.coords.longitude
-                maxLng = location.coords.longitude
+                minLng = point.longitude
+                maxLng = point.longitude
             } else {
-                minLat = min(location.coords.latitude, minLat!!)
-                maxLat = max(location.coords.latitude, maxLat!!)
+                minLat = min(point.latitude, minLat!!)
+                maxLat = max(point.latitude, maxLat!!)
 
-                minLng = min(location.coords.longitude, minLng!!)
-                maxLng = max(location.coords.longitude, maxLng!!)
+                minLng = min(point.longitude, minLng!!)
+                maxLng = max(point.longitude, maxLng!!)
             }
         }
 
@@ -208,9 +244,32 @@ class MapPageFragment : Fragment(), RecorderCallbacks {
         builder.include(LatLng(minLat!!, minLng!!));
         builder.include(LatLng(maxLat!!, maxLng!!));
 
-        googleMap?.moveCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), 100));*/
+        map?.animateCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), 100));
     }
 
+    private fun createPolyline(sessionId: String) {
+        sessionPolylines[sessionId] = map!!.addPolyline(PolylineOptions().color(ContextCompat.getColor(requireContext(), R.color.brand)).width(10f).zIndex(10f));
+    }
+
+    private fun createMarker(location: LatLng, resource: Int, zIndex: Float = 100f): Marker? {
+        return map!!.addMarker(
+            MarkerOptions().position(location).anchor(0.5f, 0.5f).zIndex(zIndex).icon(
+                BitmapDescriptorFactory.fromBitmap(
+                    getScaledMarkerIcon(
+                        resource,
+                        32,
+                        32
+                    )
+                )
+            )
+        );
+    }
+
+    private fun addPolylinePoint(sessionId: String, point: LatLng) {
+        val points = sessionPolylines[sessionId]!!.points;
+        points.add(point);
+        sessionPolylines[sessionId]!!.points = points;
+    }
 
     override fun onLocationUpdate(event: RecorderLocationEvent) {
         if(map != null) {
@@ -218,13 +277,45 @@ class MapPageFragment : Fragment(), RecorderCallbacks {
 
             println("Received location on map page");
 
-            map!!.moveCamera(CameraUpdateFactory.newLatLng(coordinate));
+            if(!cameraOverview)
+                map!!.moveCamera(CameraUpdateFactory.newLatLng(coordinate));
+            else if(activity.recorder.lastStateInfoEvent?.stateInfo?.state == ExerciseState.ACTIVE)
+                setMapCameraToBounds();
 
             locationMarker?.position = coordinate;
+
+            if(activity.recorder.started && activity.recorder.lastStateInfoEvent?.stateInfo?.state == ExerciseState.ACTIVE) {
+                println("Adding polyline updates");
+
+                val sessionId = activity.recorder.currentSession!!.id;
+
+                if (sessionPolylines.contains(sessionId)) {
+                    addPolylinePoint(sessionId, coordinate);
+                } else {
+                    createMarker(coordinate, if (activity.recorder.currentSessionIndex == 0) R.drawable.start else R.drawable.intermediate);
+
+                    createPolyline(sessionId);
+                    addPolylinePoint(sessionId, coordinate);
+                }
+            }
         }
     }
 
     override fun onStateInfoEvent(event: RecorderStateInfoEvent) {
+        if(event.previousStateInfo?.state == ExerciseState.ACTIVE && event.stateInfo?.state != ExerciseState.ACTIVE) {
+            cameraOverview = true;
+
+            setMapCameraToBounds();
+        }
+        else if(event.previousStateInfo?.state != ExerciseState.ACTIVE && event.stateInfo?.state == ExerciseState.ACTIVE) {
+            cameraOverview = false;
+
+            val lastLocationEvent = activity.recorder.lastLocationEvent;
+
+            if(lastLocationEvent != null)
+                map!!.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(lastLocationEvent!!.latitude, lastLocationEvent!!.longitude), 15f));
+        }
+
         val recordingButton = view?.findViewById<ImageButton>(R.id.recordingButton)?: return;
         val pausedViewIndicator = view?.findViewById<View>(R.id.pausedViewIndicator);
 
@@ -247,6 +338,24 @@ class MapPageFragment : Fragment(), RecorderCallbacks {
     }
 
     override fun onSpeedEvent(event: RecorderSpeedEvent) {
+    }
+
+    override fun onDistanceEvent(event: RecorderDistanceEvent) {
+
+    }
+
+    override fun onElevationEvent(event: RecorderElevationEvent) {
+    }
+
+    override fun onSessionEndEvent(event: RecorderSessionEndEvent) {
+        if(map == null)
+            return;
+
+        if(sessionPolylines.contains(event.sessionId)) {
+            val sessionPolyline = sessionPolylines[event.sessionId];
+
+            createMarker(sessionPolyline!!.points.last(), R.drawable.intermediate);
+        }
     }
 
     override fun onDurationEvent(event: RecorderDurationEvent) {

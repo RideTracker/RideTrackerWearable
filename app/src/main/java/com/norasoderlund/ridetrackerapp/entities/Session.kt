@@ -8,5 +8,11 @@ import androidx.room.PrimaryKey
 data class Session(
     @PrimaryKey
     @ColumnInfo(name = "id")
-    val id: String
+    val id: String,
+
+    @ColumnInfo(name = "index")
+    val index: Int,
+
+    @ColumnInfo(name = "timestamp")
+    val timestamp: Long
 );

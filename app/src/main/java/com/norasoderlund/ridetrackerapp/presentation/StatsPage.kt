@@ -16,8 +16,11 @@ import androidx.fragment.app.Fragment
 import androidx.health.services.client.data.ExerciseState
 import com.norasoderlund.ridetrackerapp.R
 import com.norasoderlund.ridetrackerapp.RecorderCallbacks
+import com.norasoderlund.ridetrackerapp.RecorderDistanceEvent
 import com.norasoderlund.ridetrackerapp.RecorderDurationEvent
+import com.norasoderlund.ridetrackerapp.RecorderElevationEvent
 import com.norasoderlund.ridetrackerapp.RecorderLocationEvent
+import com.norasoderlund.ridetrackerapp.RecorderSessionEndEvent
 import com.norasoderlund.ridetrackerapp.RecorderSpeedEvent
 import com.norasoderlund.ridetrackerapp.RecorderStateInfoEvent
 import org.greenrobot.eventbus.EventBus
@@ -25,8 +28,12 @@ import kotlin.math.round
 
 class StatsPageFragment : Fragment(), RecorderCallbacks {
     private lateinit var speedValue: TextView;
+
     private lateinit var elevationValue: TextView;
+    private lateinit var elevationUnit: TextView;
+
     private lateinit var distanceValue: TextView;
+    private lateinit var distanceUnit: TextView;
 
     private lateinit var activity: MainActivity;
 
@@ -48,13 +55,13 @@ class StatsPageFragment : Fragment(), RecorderCallbacks {
 
         activity = requireActivity() as MainActivity;
 
-        activity.recorder.callbacks.add(this);
+        activity.recorder.addCallback(this);
     }
 
     override fun onStop() {
         super.onStop();
 
-        activity.recorder.callbacks.remove(this);
+        activity.recorder.removeCallback(this);
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -73,7 +80,7 @@ class StatsPageFragment : Fragment(), RecorderCallbacks {
 
         var elevationLabel = view.findViewById<TextView>(R.id.elevationLabel);
         elevationValue = view.findViewById<TextView>(R.id.elevationValue);
-        var elevationUnit = view.findViewById<TextView>(R.id.elevationUnit);
+        elevationUnit = view.findViewById<TextView>(R.id.elevationUnit);
 
         var speedLabel = view.findViewById<TextView>(R.id.speedLabel);
         speedValue = view.findViewById<TextView>(R.id.speedValue);
@@ -81,10 +88,14 @@ class StatsPageFragment : Fragment(), RecorderCallbacks {
 
         var distanceLabel = view.findViewById<TextView>(R.id.distanceLabel);
         distanceValue = view.findViewById<TextView>(R.id.distanceValue);
-        var distanceUnit = view.findViewById<TextView>(R.id.distanceUnit);
+        distanceUnit = view.findViewById<TextView>(R.id.distanceUnit);
 
         view.findViewById<LinearLayout>(R.id.statsRecordingButton)?.setOnClickListener {
             activity.recorder.toggle();
+        }
+
+        view.findViewById<LinearLayout>(R.id.statsFinishButton)?.setOnClickListener {
+            activity.recorder.finish();
         }
 
         view.findViewById<ConstraintLayout>(R.id.elevationButton)?.setOnClickListener {
@@ -130,6 +141,10 @@ class StatsPageFragment : Fragment(), RecorderCallbacks {
         }
 
         updateRecordingButtonState(false);
+
+        if(activity.recorder.lastSpeedEvent != null) onSpeedEvent(activity.recorder.lastSpeedEvent!!);
+        if(activity.recorder.lastElevationEvent != null) onElevationEvent(activity.recorder.lastElevationEvent!!);
+        if(activity.recorder.lastDistanceEvent != null) onDistanceEvent(activity.recorder.lastDistanceEvent!!);
 
         //if(activity.recorder.started && !activity.recorder.paused)
         //    setPageState(false, false);
@@ -250,6 +265,19 @@ class StatsPageFragment : Fragment(), RecorderCallbacks {
 
     override fun onSpeedEvent(event: RecorderSpeedEvent) {
         speedValue.text = (round((event.metersPerSecond * 3.6) * 10.0) / 10.0).toString();
+    }
+
+    override fun onDistanceEvent(event: RecorderDistanceEvent) {
+        distanceValue.text = event.formattedDistance.text;
+        distanceUnit.text = event.formattedDistance.unit;
+    }
+
+    override fun onElevationEvent(event: RecorderElevationEvent) {
+        elevationValue.text = event.formattedDistance.text;
+        elevationUnit.text = event.formattedDistance.unit;
+    }
+
+    override fun onSessionEndEvent(event: RecorderSessionEndEvent) {
     }
 
     override fun onDurationEvent(event: RecorderDurationEvent) {
