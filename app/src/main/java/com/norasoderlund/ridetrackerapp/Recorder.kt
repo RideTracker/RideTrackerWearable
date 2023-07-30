@@ -34,11 +34,13 @@ import java.util.UUID
 import kotlin.math.round
 
 class Recorder {
+    internal val id = UUID.randomUUID().toString();
+
     private lateinit var activity: MainActivity;
     private lateinit var healthClient: HealthServicesClient;
 
     private var database: SessionDatabase? = null;
-    private var dao: SessionDao? = null;
+    internal var dao: SessionDao? = null;
 
     internal var currentSession: Session? = null;
     internal var currentSessionIndex: Int = 0;

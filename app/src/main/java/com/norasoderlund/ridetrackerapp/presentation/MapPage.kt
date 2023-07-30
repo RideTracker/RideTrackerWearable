@@ -240,6 +240,9 @@ class MapPageFragment : Fragment(), RecorderCallbacks {
             }
         }
 
+        if(minLat == null || maxLat == null || minLng == null || maxLng == null)
+            return;
+
         val builder = LatLngBounds.builder();
         builder.include(LatLng(minLat!!, minLng!!));
         builder.include(LatLng(maxLat!!, maxLng!!));

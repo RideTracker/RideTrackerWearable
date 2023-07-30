@@ -14,6 +14,7 @@ import android.location.Location
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.JsonWriter
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -54,6 +55,11 @@ import androidx.health.services.client.data.LocationAvailability
 import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
 import androidx.wear.ambient.AmbientModeSupport.AmbientCallbackProvider
+import androidx.work.Data
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkRequest
+import androidx.work.await
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.model.LatLng
@@ -68,14 +74,16 @@ import com.norasoderlund.ridetrackerapp.RecorderLocationEvent
 import com.norasoderlund.ridetrackerapp.RecorderSessionEndEvent
 import com.norasoderlund.ridetrackerapp.RecorderSpeedEvent
 import com.norasoderlund.ridetrackerapp.RecorderStateInfoEvent
+import com.norasoderlund.ridetrackerapp.RecorderUploader
 import com.norasoderlund.ridetrackerapp.database.SessionDatabase
 import com.norasoderlund.ridetrackerapp.presentation.theme.RideTrackerTheme
 import com.norasoderlund.ridetrackerapp.utils.getFormattedDuration
-import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.Calendar
 
 
@@ -183,13 +191,7 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
         }
     }
 
-    var onLoadingComplete = object : Runnable {
-        override fun run() {
-            setPagesView();
-
-            println("onLoadingComplete");
-        }
-    }
+    private lateinit var onLoadingComplete: Runnable;
 
     @SuppressLint("MissingPermission")
     private fun setLocationView() {
@@ -209,6 +211,14 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
                 // This app has an existing workout.
                 OWNED_EXERCISE_IN_PROGRESS -> {
                     println("owned exercise in progress");
+
+                    onLoadingComplete = object : Runnable {
+                        override fun run() {
+                            setPagesView();
+
+                            println("onLoadingComplete");
+                        }
+                    };
 
                     setContentView(R.layout.location);
                     Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
@@ -240,6 +250,13 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
                 NO_EXERCISE_IN_PROGRESS -> {
                     println("no exercise in progress");
 
+                    onLoadingComplete = object : Runnable {
+                        override fun run() {
+                            setPagesView();
+
+                            println("onLoadingComplete");
+                        }
+                    };
                     setContentView(R.layout.location);
                     Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
 
@@ -403,8 +420,75 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
     fun setUploadingView() {
         setContentView(R.layout.uploading_page);
 
+        onLoadingComplete = object : Runnable {
+            override fun run() {
+                setUploadedView();
+
+                println("onLoadingComplete");
+            }
+        };
+
         isLoading = true;
         Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
+
+        val activity = this;
+
+        lifecycleScope.launch {
+            val recording = JSONObject();
+            recording.put("localId", recorder.id);
+            recording.put("visibility", "PUBLIC");
+
+            val sessions = JSONArray();
+
+            recorder.dao!!.getSessions().forEach { session ->
+                val locationsArray = JSONArray();
+
+                recorder.dao!!.getSessionLocations(session.id).forEach { location ->
+                    val coordsObject = JSONObject();
+
+                    coordsObject.put("latitude", location.latitude);
+                    coordsObject.put("longitude", location.longitude);
+                    coordsObject.put("altitude", location.altitude);
+
+                    //TODO: add session properties
+                    coordsObject.put("accuracy", 0);
+                    coordsObject.put("altitudeAccuracy", 0);
+                    coordsObject.put("speed", 0);
+                    coordsObject.put("heading", 0);
+
+                    val locationObject = JSONObject();
+                    locationObject.put("coords", coordsObject);
+                    locationObject.put("timestamp", location.timestamp);
+
+                    locationsArray.put(locationObject);
+                }
+
+                val sessionObject = JSONObject();
+                sessionObject.put("id", session.id);
+                sessionObject.put("locations", locationsArray);
+                sessionObject.put("timestamp", session.timestamp);
+
+                sessions.put(sessionObject);
+            }
+
+            recording.put("sessions", sessions);
+
+            println(recording.toString());
+
+            val workRequestBuilder = OneTimeWorkRequestBuilder<RecorderUploader>();
+
+            val data = Data.Builder();
+            data.putString("recording", recording.toString());
+            workRequestBuilder.setInputData(data.build());
+
+            WorkManager.getInstance(activity).enqueue(workRequestBuilder.build()).result.await();
+
+            isLoading = false;
+        }
+    }
+
+    fun setUploadedView() {
+        setContentView(R.layout.uploaded_page);
     }
 
     override fun onLocationUpdate(event: RecorderLocationEvent) {
