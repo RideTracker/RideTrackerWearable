@@ -14,7 +14,8 @@ import android.location.Location
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.util.JsonWriter
+import android.view.View
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -32,38 +33,28 @@ import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.health.services.client.ExerciseUpdateCallback
 import androidx.health.services.client.HealthServices
 import androidx.health.services.client.HealthServicesClient
-import androidx.health.services.client.data.Availability
-import androidx.health.services.client.data.DataType
-import androidx.health.services.client.data.DataTypeAvailability
-import androidx.health.services.client.data.ExerciseLapSummary
 import androidx.health.services.client.data.ExerciseState
 import androidx.health.services.client.data.ExerciseTrackedStatus.Companion.NO_EXERCISE_IN_PROGRESS
 import androidx.health.services.client.data.ExerciseTrackedStatus.Companion.OTHER_APP_IN_PROGRESS
 import androidx.health.services.client.data.ExerciseTrackedStatus.Companion.OWNED_EXERCISE_IN_PROGRESS
-import androidx.health.services.client.data.ExerciseType
-import androidx.health.services.client.data.ExerciseUpdate
-import androidx.health.services.client.data.WarmUpConfig
 import androidx.viewpager2.widget.ViewPager2
 import androidx.wear.ambient.AmbientModeSupport
 import androidx.wear.ambient.AmbientModeSupport.AmbientController
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
-import androidx.health.services.client.data.LocationAvailability
 import androidx.lifecycle.lifecycleScope
-import androidx.room.Room
 import androidx.wear.ambient.AmbientModeSupport.AmbientCallbackProvider
 import androidx.work.Data
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
-import androidx.work.WorkRequest
 import androidx.work.await
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.material.progressindicator.CircularProgressIndicator
+import com.norasoderlund.ridetrackerapp.ApiClient
 import com.norasoderlund.ridetrackerapp.R
 import com.norasoderlund.ridetrackerapp.Recorder
 import com.norasoderlund.ridetrackerapp.RecorderCallbacks
@@ -75,13 +66,10 @@ import com.norasoderlund.ridetrackerapp.RecorderSessionEndEvent
 import com.norasoderlund.ridetrackerapp.RecorderSpeedEvent
 import com.norasoderlund.ridetrackerapp.RecorderStateInfoEvent
 import com.norasoderlund.ridetrackerapp.RecorderUploader
-import com.norasoderlund.ridetrackerapp.database.SessionDatabase
+import com.norasoderlund.ridetrackerapp.TokenStore
 import com.norasoderlund.ridetrackerapp.presentation.theme.RideTrackerTheme
-import com.norasoderlund.ridetrackerapp.utils.getFormattedDuration
+import com.norasoderlund.ridetrackerapp.utils.getDeviceName
 import kotlinx.coroutines.launch
-import org.greenrobot.eventbus.EventBus
-import org.greenrobot.eventbus.Subscribe
-import org.greenrobot.eventbus.ThreadMode
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
@@ -95,22 +83,63 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
 
     private lateinit var ambientController: AmbientController;
     private lateinit var healthClient: HealthServicesClient;
+    internal lateinit var tokenStore: TokenStore;
+    private lateinit var apiClient: ApiClient;
+
+    internal var deviceName: String? = null;
 
     internal var initialLocation: LatLng = LatLng(0.0, 0.0);
 
+    /**
+     * Flow:
+     * Empty loading >
+     *                  if permissions: location view
+     *                  else permisisons view
+     */
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.AppTheme_NoActionBar);
 
         super.onCreate(savedInstanceState);
 
-        ambientController = AmbientModeSupport.attach(this);
-        ambientController.setAmbientOffloadEnabled(false);
-        println("Is ambient enabled: " + ambientController.isAmbient);
+        setLoadingView({});
 
-        healthClient = HealthServices.getClient(this);
+        val activity = this;
 
-        recorder = Recorder(this, healthClient);
+        lifecycleScope.launch {
+            deviceName = getDeviceName(activity)?: "Unknown";
 
+            tokenStore = TokenStore(activity);
+
+            ambientController = AmbientModeSupport.attach(activity);
+            ambientController.setAmbientOffloadEnabled(false);
+            println("Is ambient enabled: " + ambientController.isAmbient);
+
+            healthClient = HealthServices.getClient(activity);
+            recorder = Recorder(activity, healthClient);
+            apiClient = ApiClient(activity);
+
+            println("Checking if there's a key in the token store...");
+
+            if(tokenStore.readKey() == null) {
+                println("No token found, instructing to open login view.");
+
+                setLoadingViewRunnable {
+                    run {
+                        setLoginView();
+                    }
+                }
+            }
+            else {
+                println("Token found, instructing to check for permissions.");
+
+                requestPermissionsPage();
+            }
+
+            isLoading = false;
+        }.start();
+    }
+
+    fun requestPermissionsPage() {
         val permissions = mapOf<String, Int>(
             Manifest.permission.ACCESS_FINE_LOCATION to ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION),
             Manifest.permission.ACCESS_COARSE_LOCATION to ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION),
@@ -120,16 +149,19 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
             Manifest.permission.WAKE_LOCK to ActivityCompat.checkSelfPermission(this, Manifest.permission.WAKE_LOCK)
         );
 
+        setLoadingViewRunnable {
+            run {
+                if (permissions.any { permission -> permission.value == PackageManager.PERMISSION_DENIED }) {
+                    setContentView(R.layout.permissions);
 
-        if (permissions.any { permission -> permission.value == PackageManager.PERMISSION_DENIED }) {
-            setContentView(R.layout.permissions);
-
-            ActivityCompat.requestPermissions(this, permissions.filter { permission -> permission.value == PackageManager.PERMISSION_DENIED }.keys.toTypedArray(), 1);
-        }
-        else {
-            //setPagesView();
-            setLocationView();
-        }
+                    ActivityCompat.requestPermissions(this, permissions.filter { permission -> permission.value == PackageManager.PERMISSION_DENIED }.keys.toTypedArray(), 1);
+                }
+                else {
+                    //setPagesView();
+                    setLocationView();
+                }
+            }
+        };
     }
 
     override fun onStart() {
@@ -193,6 +225,150 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
 
     private lateinit var onLoadingComplete: Runnable;
 
+    private fun setLoadingView(runnable: Runnable, iconResource: Int? = null, text: String? = null) {
+        onLoadingComplete = runnable;
+
+        setContentView(R.layout.starting_page);
+
+        if(iconResource != null)
+            findViewById<ImageView>(R.id.iconImage)?.setImageResource(iconResource);
+
+        if(text != null)
+            findViewById<TextView>(R.id.textView)?.text = text;
+
+        Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
+    }
+
+    internal fun setLoginView() {
+        setContentView(R.layout.login_page);
+
+        findViewById<LinearLayout>(R.id.appButton)?.setOnClickListener {
+            setLoginAppView();
+        }
+
+        findViewById<LinearLayout>(R.id.passwordButton)?.setOnClickListener {
+            setLoginAppEmailView();
+        }
+    }
+
+    private fun setLoginAppView() {
+        setContentView(R.layout.login_app_page);
+
+        findViewById<LinearLayout>(R.id.continueButton)?.setOnClickListener {
+            setLoginAppCodeView();
+        }
+
+        findViewById<LinearLayout>(R.id.cancelButton)?.setOnClickListener {
+            setLoginView();
+        }
+    }
+
+    private fun setLoginAppCodeView() {
+        setContentView(R.layout.login_app_code_page);
+
+        val codeInput = findViewById<EditText>(R.id.codeInput);
+
+        findViewById<LinearLayout>(R.id.continueButton)?.setOnClickListener {
+            val code = codeInput.text.toString();
+
+            setLoadingView({}, R.drawable.baseline_directions_bike_24, "Verifying login...");
+
+            lifecycleScope.launch {
+                apiClient.verifyLoginCode(code) { response ->
+                    if(!response.success) {
+                        setLoadingViewRunnable {
+                            run {
+                                setErrorView(response.message!!) {
+                                    setLoginAppCodeView();
+                                }
+                            }
+                        }
+
+                        isLoading = false;
+                    }
+                    else {
+                        tokenStore.putKey(response.token!!);
+
+                        requestPermissionsPage();
+
+                        isLoading = false;
+                    }
+                }
+            }.start();
+        }
+
+        findViewById<LinearLayout>(R.id.cancelButton)?.setOnClickListener {
+            setLoginView();
+        }
+    }
+
+    private fun setLoginAppEmailView() {
+        setContentView(R.layout.login_app_email_page);
+
+        val codeInput = findViewById<EditText>(R.id.codeInput);
+
+        findViewById<LinearLayout>(R.id.continueButton)?.setOnClickListener {
+            val email = codeInput.text.toString();
+
+            setLoginAppPasswordView(email);
+        }
+
+        findViewById<LinearLayout>(R.id.cancelButton)?.setOnClickListener {
+            setLoginView();
+        }
+    }
+
+    private fun setLoginAppPasswordView(email: String) {
+        setContentView(R.layout.login_app_password_page);
+
+        val codeInput = findViewById<EditText>(R.id.codeInput);
+
+        findViewById<LinearLayout>(R.id.continueButton)?.setOnClickListener {
+            val password = codeInput.text.toString();
+
+            setLoadingView({}, R.drawable.baseline_directions_bike_24, "Verifying login...");
+
+            lifecycleScope.launch {
+                apiClient.verifyLoginPassword(email, password) { response ->
+                    if(!response.success) {
+                        setLoadingViewRunnable {
+                            run {
+                                setErrorView(response.message!!) {
+                                    setLoginAppPasswordView(email);
+                                }
+                            }
+                        }
+
+                        isLoading = false;
+                    }
+                    else {
+                        tokenStore.putKey(response.token!!);
+
+                        requestPermissionsPage();
+
+                        isLoading = false;
+                    }
+                }
+            }.start();
+        }
+
+        findViewById<LinearLayout>(R.id.cancelButton)?.setOnClickListener {
+            setLoginAppEmailView();
+        }
+    }
+
+    private fun setErrorView(text: String, backListener: View.OnClickListener) {
+        setContentView(R.layout.error_page);
+
+        findViewById<TextView>(R.id.textView)?.text = text;
+
+        findViewById<LinearLayout>(R.id.backButton)?.setOnClickListener(backListener);
+    }
+
+    private fun setLoadingViewRunnable(runnable: Runnable) {
+        onLoadingComplete = runnable;
+    }
+
     @SuppressLint("MissingPermission")
     private fun setLocationView() {
         lifecycleScope.launch {
@@ -212,16 +388,11 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
                 OWNED_EXERCISE_IN_PROGRESS -> {
                     println("owned exercise in progress");
 
-                    onLoadingComplete = object : Runnable {
-                        override fun run() {
-                            setPagesView();
-
-                            println("onLoadingComplete");
+                    setLoadingView({
+                        run {
+                            setPagesView()
                         }
-                    };
-
-                    setContentView(R.layout.location);
-                    Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
+                    }, R.drawable.baseline_my_location_24, "Calibrating your GPS...");
 
                     recorder = Recorder(activity, healthClient);
                     recorder.addCallback(activity);
@@ -250,15 +421,11 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
                 NO_EXERCISE_IN_PROGRESS -> {
                     println("no exercise in progress");
 
-                    onLoadingComplete = object : Runnable {
-                        override fun run() {
+                    setLoadingView({
+                        run {
                             setPagesView();
-
-                            println("onLoadingComplete");
                         }
-                    };
-                    setContentView(R.layout.location);
-                    Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
+                    }, R.drawable.baseline_my_location_24, "Calibrating your GPS...");
 
 
                     //val warmUpConfig = WarmUpConfig(ExerciseType.BIKING, setOf(DataType.LOCATION));

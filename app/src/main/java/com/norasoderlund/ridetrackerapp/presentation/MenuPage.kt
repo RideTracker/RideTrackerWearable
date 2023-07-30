@@ -81,8 +81,21 @@ class MenuPageFragment : Fragment() {
 
         val itemList: MutableList<MenuItem> = ArrayList()
 
-        itemList.add(MenuItem("Set ride goals", R.drawable.baseline_auto_awesome_24, ContextCompat.getColor(requireContext(), R.color.yellow)))
-        itemList.add(MenuItem("Settings", R.drawable.baseline_settings_24, ContextCompat.getColor(requireContext(), androidx.wear.input.R.color.grey)))
+        itemList.add(MenuItem("Set ride goals", R.drawable.baseline_auto_awesome_24, ContextCompat.getColor(requireContext(), R.color.yellow)) {
+
+        })
+
+        itemList.add(MenuItem("Settings", R.drawable.baseline_settings_24, ContextCompat.getColor(requireContext(), androidx.wear.input.R.color.grey)) {
+
+        })
+
+        itemList.add(MenuItem("Sign out", R.drawable.baseline_logout_24, ContextCompat.getColor(requireContext(), R.color.red)) {
+            val activity = activity as MainActivity;
+
+            activity.tokenStore.deleteKey();
+
+            activity.setLoginView();
+        })
 
         val myAdapter = MyAdapter(itemList)
         wearableRecyclerView.adapter = myAdapter

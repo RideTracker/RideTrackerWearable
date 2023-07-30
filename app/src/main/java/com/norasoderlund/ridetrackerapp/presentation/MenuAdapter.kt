@@ -3,6 +3,7 @@ package com.norasoderlund.ridetrackerapp.presentation
 import com.norasoderlund.ridetrackerapp.R
 import android.view.LayoutInflater
 import android.view.View
+import android.view.View.OnClickListener
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
@@ -13,7 +14,7 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 
 
-data class MenuItem(val label: String, val resourceId: Int, val tintColor: Int);
+data class MenuItem(val label: String, val resourceId: Int, val tintColor: Int, val onClickListener: OnClickListener);
 
 class MyAdapter(private val itemList: List<MenuItem>) :
     RecyclerView.Adapter<MyAdapter.MyViewHolder>() {
@@ -32,7 +33,7 @@ class MyAdapter(private val itemList: List<MenuItem>) :
         holder.buttonLayout.background.setTint(itemText.tintColor);
 
         // Handle button click here if needed.
-        holder.itemButton.setOnClickListener { v -> }
+        holder.itemButton.setOnClickListener(itemText.onClickListener)
     }
 
     override fun getItemCount(): Int {
