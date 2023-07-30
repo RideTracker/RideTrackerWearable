@@ -39,6 +39,7 @@ import androidx.health.services.client.data.ExerciseState
 import androidx.health.services.client.data.ExerciseTrackedStatus.Companion.NO_EXERCISE_IN_PROGRESS
 import androidx.health.services.client.data.ExerciseTrackedStatus.Companion.OTHER_APP_IN_PROGRESS
 import androidx.health.services.client.data.ExerciseTrackedStatus.Companion.OWNED_EXERCISE_IN_PROGRESS
+import androidx.health.services.client.endExercise
 import androidx.viewpager2.widget.ViewPager2
 import androidx.wear.ambient.AmbientModeSupport
 import androidx.wear.ambient.AmbientModeSupport.AmbientController
@@ -274,7 +275,7 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
             setLoadingView({}, R.drawable.baseline_directions_bike_24, "Verifying login...");
 
             lifecycleScope.launch {
-                apiClient.verifyLoginCode(code) { response ->
+                apiClient.verifyLoginCode(deviceName!!, code) { response ->
                     if(!response.success) {
                         setLoadingViewRunnable {
                             run {
@@ -329,7 +330,7 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
             setLoadingView({}, R.drawable.baseline_directions_bike_24, "Verifying login...");
 
             lifecycleScope.launch {
-                apiClient.verifyLoginPassword(email, password) { response ->
+                apiClient.verifyLoginPassword(deviceName!!, email, password) { response ->
                     if(!response.success) {
                         setLoadingViewRunnable {
                             run {
@@ -390,14 +391,9 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
 
                     setLoadingView({
                         run {
-                            setPagesView()
+                            setPagesView();
                         }
                     }, R.drawable.baseline_my_location_24, "Calibrating your GPS...");
-
-                    recorder = Recorder(activity, healthClient);
-                    recorder.addCallback(activity);
-
-                    recorder.setExerciseCallback();
 
                     val fusedLocationClient = LocationServices.getFusedLocationProviderClient(activity);
 
@@ -406,14 +402,20 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
                                 location: Location -> initialLocation = LatLng(location.latitude, location.longitude);
                         }
                         .addOnCompleteListener {
-                            recorder.startDatabase();
+                            lifecycleScope.launch {
+                                healthClient.exerciseClient.endExercise();
 
-                            recorder.startExerciseUpdates();
+                                recorder = Recorder(activity, healthClient);
 
-                            // Experimental... should in theory "start" the recorder without starting a new session
-                            recorder.resume();
+                                recorder.startDatabase();
+                                //recorder.clearDatabase();
 
-                            isLoading = false;
+                                recorder.addCallback(activity);
+
+                                recorder.startExerciseUpdates();
+
+                                isLoading = false;
+                            }.start();
                         };
                 }
 
@@ -426,15 +428,6 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
                             setPagesView();
                         }
                     }, R.drawable.baseline_my_location_24, "Calibrating your GPS...");
-
-
-                    //val warmUpConfig = WarmUpConfig(ExerciseType.BIKING, setOf(DataType.LOCATION));
-                    //healthClient.exerciseClient.setUpdateCallback(excerciseUpdateCallback);
-
-
-                    //healthClient.exerciseClient.prepareExerciseAsync(warmUpConfig).await();
-
-                    //healthClient.exerciseClient.endExerciseAsync().await();
 
                     val fusedLocationClient = LocationServices.getFusedLocationProviderClient(activity);
 
@@ -450,7 +443,6 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
 
                             recorder.addCallback(activity);
 
-                            //recorder.setExerciseCallback();
                             recorder.startExerciseUpdates();
 
                             isLoading = false;
@@ -587,16 +579,7 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
     fun setUploadingView() {
         setContentView(R.layout.uploading_page);
 
-        onLoadingComplete = object : Runnable {
-            override fun run() {
-                setUploadedView();
-
-                println("onLoadingComplete");
-            }
-        };
-
-        isLoading = true;
-        Handler(Looper.getMainLooper()).postDelayed(progressIndicatorRunnable, 100);
+        setLoadingView({}, R.drawable.baseline_cloud_upload_24, "Uploading your activity...");
 
         val activity = this;
 
@@ -646,9 +629,16 @@ class MainActivity : AppCompatActivity(), AmbientCallbackProvider, RecorderCallb
 
             val data = Data.Builder();
             data.putString("recording", recording.toString());
+            data.putString("token", tokenStore.readKey());
             workRequestBuilder.setInputData(data.build());
 
-            WorkManager.getInstance(activity).enqueue(workRequestBuilder.build()).result.await();
+            WorkManager.getInstance(activity).enqueue(workRequestBuilder.build()).await();
+
+            setLoadingViewRunnable {
+                run {
+                    setUploadedView();
+                }
+            };
 
             isLoading = false;
         }

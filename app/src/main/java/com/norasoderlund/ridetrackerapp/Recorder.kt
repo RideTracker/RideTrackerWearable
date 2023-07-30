@@ -16,6 +16,8 @@ import androidx.health.services.client.data.ExerciseType
 import androidx.health.services.client.data.ExerciseUpdate
 import androidx.health.services.client.data.LocationAvailability
 import androidx.health.services.client.endExercise
+import androidx.health.services.client.getCapabilities
+import androidx.health.services.client.getCurrentExerciseInfo
 import androidx.health.services.client.pauseExercise
 import androidx.health.services.client.resumeExercise
 import androidx.lifecycle.lifecycleScope
@@ -54,6 +56,10 @@ class Recorder {
     internal var lastDistanceEvent: RecorderDistanceEvent? = null;
     internal var lastElevationEvent: RecorderElevationEvent? = null;
     internal var lastSpeedStatsEvent: RecorderSpeedStatsEvent? = null;
+
+    internal fun hasCallback(callback: RecorderCallbacks): Boolean {
+        return callbacks.contains(callback);
+    }
 
     internal fun addCallback(callback: RecorderCallbacks) {
         if(callbacks.contains(callback))
@@ -102,7 +108,7 @@ class Recorder {
         dao!!.clear();
     }
 
-    internal fun startExerciseUpdates() {
+    internal fun startExerciseUpdates(resume: Boolean = false) {
         println("Recorder: startExerciseUpdates");
 
         if(dao == null)
@@ -110,13 +116,26 @@ class Recorder {
 
         val lastSession = dao!!.getLastSession();
 
-        if(lastSession.isNotEmpty()) {
+        if(resume) {
+            currentSessionIndex = if(lastSession.isNotEmpty()) lastSession.first().index + 1 else 0;
+            currentSession = Session(UUID.randomUUID().toString(), currentSessionIndex, Calendar.getInstance().timeInMillis);
+
+            println("Recorder: starting new session with index $currentSessionIndex, without starting exercise");
+
+            dao!!.createSession(currentSession!!);
+        }
+        else if(lastSession.isNotEmpty()) {
             currentSessionIndex = lastSession.first().index + 1;
             currentSession = Session(UUID.randomUUID().toString(), currentSessionIndex, Calendar.getInstance().timeInMillis);
 
             dao!!.createSession(currentSession!!);
 
-            println("Recorder: starting new session with index " + currentSessionIndex);
+            println("Recorder: starting new session with index $currentSessionIndex");
+
+            setExerciseCallback();
+
+            val exerciseConfig = ExerciseConfig(ExerciseType.BIKING, setOf(DataType.LOCATION, DataType.DISTANCE_TOTAL, DataType.ELEVATION_GAIN_TOTAL, DataType.SPEED, DataType.SPEED_STATS), false, true);
+            healthClient.exerciseClient.startExerciseAsync(exerciseConfig);
         }
         else {
             println("Recorder: starting new session because database was just cleared or there was none.");
@@ -126,12 +145,12 @@ class Recorder {
             currentSession = Session(UUID.randomUUID().toString(), currentSessionIndex, Calendar.getInstance().timeInMillis);
 
             dao!!.createSession(currentSession!!);
+
+            setExerciseCallback();
+
+            val exerciseConfig = ExerciseConfig(ExerciseType.BIKING, setOf(DataType.LOCATION, DataType.DISTANCE_TOTAL, DataType.ELEVATION_GAIN_TOTAL, DataType.SPEED, DataType.SPEED_STATS), false, true);
+            healthClient.exerciseClient.startExerciseAsync(exerciseConfig);
         }
-
-        setExerciseCallback();
-
-        val exerciseConfig = ExerciseConfig(ExerciseType.BIKING, setOf(DataType.LOCATION, DataType.DISTANCE_TOTAL, DataType.ELEVATION_GAIN_TOTAL, DataType.SPEED, DataType.SPEED_STATS), false, true);
-        healthClient.exerciseClient.startExerciseAsync(exerciseConfig);
     }
 
     internal fun setExerciseCallback() {
@@ -335,10 +354,14 @@ class Recorder {
 
     @SuppressLint("MissingPermission")
     internal fun resume() {
+        println("Recorder: resume triggered");
+
         val calendar = Calendar.getInstance();
         startedTimestamp = calendar.time.time;
 
         if(!started) {
+            println("Recorder: start triggered");
+
             started = true;
 
             lastStateInfoEvent = RecorderStateInfoEvent(started, lastStateInfoEvent?.stateInfo, lastStateInfoEvent?.stateInfo);
@@ -350,6 +373,8 @@ class Recorder {
         }
 
         activity.lifecycleScope.launch {
+            println("Recorder: resume exercise");
+
             healthClient.exerciseClient.resumeExercise();
         }
     }
@@ -358,7 +383,11 @@ class Recorder {
         if(!started)
             throw Error("Paused was called before the recorder was started.");
 
+        println("Recorder: pause triggered");
+
         activity.lifecycleScope.launch {
+            println("Recorder: pause exercise");
+
             healthClient.exerciseClient.pauseExercise();
         }
     }

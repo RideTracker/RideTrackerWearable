@@ -58,21 +58,26 @@ class MapPageFragment : Fragment(), RecorderCallbacks {
     override fun onStart() {
         super.onStart();
 
-        activity.recorder.addCallback(this);
+        if(!activity.recorder.hasCallback(this))
+            activity.recorder.addCallback(this);
     }
 
     override fun onResume() {
         super.onResume();
+
+        if(!activity.recorder.hasCallback(this))
+            activity.recorder.addCallback(this);
     }
 
     override fun onPause() {
         super.onPause();
+
+        if(activity.recorder.hasCallback(this))
+            activity.recorder.removeCallback(this);
     }
 
     override fun onStop() {
         super.onStop();
-
-        activity.recorder.removeCallback(this);
     }
 
     override fun onCreateView(
@@ -116,6 +121,9 @@ class MapPageFragment : Fragment(), RecorderCallbacks {
 
         setAmbientButton(false);
         view.findViewById<ImageButton>(R.id.ambientButton)?.setOnClickListener { setAmbientButton(!ambientEnabled); }
+
+        if(!activity.recorder.hasCallback(this))
+            activity.recorder.addCallback(this);
 
         // Obtain the MapFragment and set the async listener to be notified when the map is ready.
         mapFragment = childFragmentManager.findFragmentById(R.id.map) as SupportMapFragment?;
@@ -275,10 +283,12 @@ class MapPageFragment : Fragment(), RecorderCallbacks {
     }
 
     override fun onLocationUpdate(event: RecorderLocationEvent) {
+        println("Received location on map page");
+
         if(map != null) {
             val coordinate = LatLng(event.latitude, event.longitude);
 
-            println("Received location on map page");
+            println("Map is not null");
 
             if(!cameraOverview)
                 map!!.moveCamera(CameraUpdateFactory.newLatLng(coordinate));

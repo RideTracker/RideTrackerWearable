@@ -14,19 +14,19 @@ class ApiClient {
     private val apiUrl: String = "https://staging.service.ridetracker.app";
     private val userAgent: String = "RideTrackerWearable-0.9.0";
 
-    private val activity: MainActivity;
+    private val context: Context;
     private val queue: RequestQueue;
 
-    constructor(activity: MainActivity) {
-        this.activity = activity;
+    constructor(context: Context) {
+        this.context = context;
 
-        queue = Volley.newRequestQueue(activity);
+        queue = Volley.newRequestQueue(context);
     }
 
-    fun verifyLoginCode(code: String, callback: (response: ClientLoginResponse) -> Unit) {
+    fun verifyLoginCode(name: String, code: String, callback: (response: ClientLoginResponse) -> Unit) {
         try {
             val body = JSONObject();
-            body.put("name", activity.deviceName);
+            body.put("name", name);
             body.put("code", code);
 
             val stringRequest =
@@ -81,10 +81,10 @@ class ApiClient {
         }
     }
 
-    fun verifyLoginPassword(email: String, password: String, callback: (response: ClientLoginResponse) -> Unit) {
+    fun verifyLoginPassword(name: String, email: String, password: String, callback: (response: ClientLoginResponse) -> Unit) {
         try {
             val body = JSONObject();
-            body.put("name", activity.deviceName);
+            body.put("name", name);
             body.put("email", email);
             body.put("password", password);
 
@@ -140,6 +140,57 @@ class ApiClient {
         }
     }
 
+    fun uploadRecording(token: String, recording: String, callback: (response: ClientCreateActivityResponse) -> Unit) {
+        try {
+            val body = JSONObject(recording);
+
+            val stringRequest =
+                object : JsonObjectRequest(Request.Method.POST, "$apiUrl/api/activities/create", body,
+                    { response ->
+                        if(response.has("success")) {
+                            val success = response.getBoolean("success");
+
+                            if(!success) {
+                                callback(ClientCreateActivityResponse(false));
+                            }
+                            else {
+                                if(response.has("activity")) {
+                                    val activity = response.getJSONObject("activity");
+
+                                    if(activity.has("id")) {
+                                        val id = activity.getString("id");
+
+                                        callback(ClientCreateActivityResponse(true, id));
+                                    }
+                                    else
+                                        callback(ClientCreateActivityResponse(true));
+                                }
+                                else
+                                    callback(ClientCreateActivityResponse(true));
+                            }
+                        }
+                        else
+                            callback(ClientCreateActivityResponse(false));
+                    },
+                    {
+                        callback(ClientCreateActivityResponse(false));
+                    }) {
+                    override fun getHeaders(): MutableMap<String, String> {
+                        val headers = HashMap<String, String>();
+                        headers["User-Agent"] = userAgent;
+                        headers["Authorization"] = "Basic device:$token";
+                        return headers;
+                    }
+                };
+
+            queue.add(stringRequest);
+        }
+        catch (exception: Exception) {
+            callback(ClientCreateActivityResponse(false));
+        }
+    }
+
 }
 
 data class ClientLoginResponse(val success: Boolean, val message: String? = null, val token: String? = null);
+data class ClientCreateActivityResponse(val success: Boolean, val activity: String? = null);
